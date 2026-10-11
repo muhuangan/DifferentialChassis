@@ -1,0 +1,185 @@
+# ==========================
+# 构建输出
+# ==========================
+build/
+Build/
+out/
+output/
+Debug/
+Release/
+*.o
+*.obj
+*.d
+*.axf
+*.elf
+*.bin
+*.hex
+*.map
+*.list
+*.lst
+*.crf
+*.dep
+*.htm
+*.i
+*.s
+*.su
+*.lnp
+
+# AC6 中间文件
+*.__i
+*.ltranscript
+*.d_
+*.o_
+*.axf_
+
+# 静态库与可执行文件
+*.a
+*.lib
+*.so
+*.dll
+*.exe
+
+# ==========================
+# IDE 与工程文件
+# ==========================
+
+# Keil MDK
+# 工程文件 .uvprojx 需要提交，禁止忽略
+*.uvoptx
+*.uvopt
+*.uvguix.*
+*.scvd
+*.bak
+*.dep
+*.iex
+*.lnp
+*.plg
+*.htm
+*.lst
+*.map
+*.build_log.htm
+JLinkLog.txt
+JLinkSettings.ini
+RTE/
+
+# IAR
+*.ewp
+*.eww
+*.ewd
+*.ewt
+*.ewb
+*.dep
+*.cspy
+*.dbgdt
+*.mac
+*.dnx
+*.ps1
+settings/
+List/
+
+# STM32CubeIDE / Eclipse
+.settings/
+.project
+.cproject
+.mxproject
+.stm32cubeide/
+*.launch
+*.prefs
+*.log
+*.tmp
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# CLion
+.idea/
+cmake-build-*/
+*.iml
+
+# ==========================
+# 调试与烧录
+# ==========================
+*.svd
+*.sfr
+*.xsvf
+*.stldr
+*.cfg
+*.log
+*.trace
+*.perf
+*.rtt
+*.jlink
+*.openocd
+*.gdb
+*.gdbinit
+
+# 调试器与烧录工具输出
+JLinkLog.txt
+JLinkSettings.ini
+openocd.log
+st-link.log
+
+# ==========================
+# 操作系统与编辑器临时文件
+# ==========================
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*~
+*.bak
+*.tmp
+*.orig
+*.rej
+*.old
+
+# ==========================
+# 测试与覆盖率
+# ==========================
+test/build/
+test/output/
+coverage/
+*.gcda
+*.gcno
+*.gcov
+*.profraw
+*.profdata
+
+# ==========================
+# 文档生成
+# ==========================
+docs/doxygen/
+docs/html/
+docs/latex/
+docs/xml/
+*.chm
+
+# ==========================
+# 本地环境与配置
+# ==========================
+.env
+.env.*
+*.local
+*.user
+*.userprefs
+*.suo
+*.userosscache
+*.sln.docstates
+
+# ==========================
+# 日志与临时数据
+# ==========================
+*.log
+logs/
+tmp/
+temp/
+cache/
+.cache/
+
+# ==========================
+# 保留占位
+# ==========================
+# 如果某些目录需要保留空目录，可添加 .gitkeep
+!.gitkeep

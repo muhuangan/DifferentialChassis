@@ -90,6 +90,8 @@ List/
 
 # VS Code
 .vscode/
+.cmsis/
+.eide/
 *.code-workspace
 
 # CLion

@@ -219,121 +219,34 @@ typedef struct
   */
 typedef struct
 {
-  CAN_HandleTypeDef   *pHcan;                              /**< 绑定的 CAN 外设句柄。 */
+  CAN_HandleTypeDef   *hcan;                               /**< 绑定的 CAN 外设句柄。 */
   bool                isReady;                             /**< 协议栈就绪标志。 */
   MID_CANopenNodeTypeDef nodes[CANOPEN_MAX_NODE_COUNT];    /**< 已注册从站节点表。 */
 } MID_CANopenHandleTypeDef;
 
-/**
-  * @brief  初始化 CANopen 协议栈。
-  * @param  pHcan  指向已完成 MX_CAN_Init 初始化的 CAN 外设句柄的指针，单 CAN 工程通常传 &hcan，不可为 NULL。
-  * @retval MID_CANOPEN_OK            初始化成功。
-  * @retval MID_CANOPEN_INVALID_PARAM 句柄为空。
-  * @retval MID_CANOPEN_ERROR         滤波器配置、启动或中断使能失败。
-  * @note   内部完成全通滤波器配置、CAN 启动与接收中断使能。
-  */
-MID_CANopenStatusTypeDef MID_CANopen_Init(CAN_HandleTypeDef *pHcan);
+/* CAN 总线诊断计数器：定义在 mid_canopen.c，刻意不声明为 static，供调试器与 live watch 直接读取，
+   业务代码不应依赖其取值。排查「总线通不通、对端到底有哪些节点地址」时只看这三个变量。 */
+extern volatile uint32_t g_canopenTxFrameCount;   /**< 累计成功写入发送邮箱的 CAN 帧数。 */
+extern volatile uint32_t g_canopenRxFrameCount;   /**< 累计收到的 CAN 帧数，含未注册节点与已过滤的同步帧。 */
+extern volatile uint32_t g_canopenLastRxCobId;    /**< 最近一帧的 11 位标准帧 ID，心跳为 0x700+NodeId。 */
 
-/**
-  * @brief  注册从站节点。
-  * @param  nodeId  节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                 取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @retval MID_CANOPEN_OK            注册成功。
-  * @retval MID_CANOPEN_INVALID_PARAM 节点地址非法或协议栈未初始化。
-  * @retval MID_CANOPEN_ERROR         节点表已满或节点已注册。
-  */
+MID_CANopenStatusTypeDef MID_CANopen_Init(CAN_HandleTypeDef *hcan);
+
 MID_CANopenStatusTypeDef MID_CANopen_AddNode(uint8_t nodeId);
 
-/**
-  * @brief  查询节点运行信息。
-  * @param  nodeId  节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                 取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @retval 节点信息指针。
-  * @retval NULL    节点地址非法，或该地址未注册。
-  */
 MID_CANopenNodeTypeDef *MID_CANopen_GetNode(uint8_t nodeId);
 
-/**
-  * @brief  判断节点心跳是否在线。
-  * @param  nodeId  节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                 取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @retval true   节点在线。
-  * @retval false  节点未注册或心跳超时。
-  * @note   心跳超时判定由 MID_CANopen_Process 周期刷新。
-  */
 bool MID_CANopen_IsNodeOnline(uint8_t nodeId);
 
-/**
-  * @brief  周期处理心跳超时判定。
-  * @param  None
-  * @retval None
-  * @note   需在主循环或周期任务中调用。
-  */
 void MID_CANopen_Process(void);
 
-/**
-  * @brief  发送网络管理报文。
-  * @param  nodeId   目标节点地址，填 0 表示对总线上全部节点广播，填 1 至 127 表示仅控制单个节点，
-  *                  取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  command  NMT 命令，取 MID_CANopenNmtCommandTypeDef 枚举值，取值参见 @ref MID_CANOPEN_NMT_Command。
-  * @retval MID_CANOPEN_OK            发送成功。
-  * @retval MID_CANOPEN_INVALID_PARAM 参数非法。
-  * @retval MID_CANOPEN_TIMEOUT       发送邮箱等待超时。
-  * @retval MID_CANOPEN_ERROR         发送失败。
-  */
 MID_CANopenStatusTypeDef MID_CANopen_Nmt_Control(uint8_t nodeId, MID_CANopenNmtCommandTypeDef command);
 
-/**
-  * @brief  发送同步帧。
-  * @param  None
-  * @retval MID_CANOPEN_OK      发送成功。
-  * @retval MID_CANOPEN_TIMEOUT 发送邮箱等待超时。
-  * @retval MID_CANOPEN_ERROR   发送失败。
-  * @note   同步帧数据段长度为 0，用于触发同步类型 PDO 的收发。
-  */
 MID_CANopenStatusTypeDef MID_CANopen_Sync_Send(void);
 
-/**
-  * @brief  通过 SDO 加速传输写入对象字典。
-  * @param  nodeId    节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                   取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  index     对象字典索引，取值参见 @ref MID_CANOPEN_OD_Communication_Profile、
-  *                   @ref MID_CANOPEN_OD_Manufacturer_Area 与 @ref MID_CANOPEN_OD_Device_Profile。
-  * @param  subIndex  对象字典子索引，取值参见 @ref MID_CANOPEN_OD_Communication_SubIndex、
-  *                   @ref MID_CANOPEN_OD_Manufacturer_SubIndex 与 @ref MID_CANOPEN_OD_Device_Profile_SubIndex。
-  * @param  pData     指向待写入数据首字节的指针，函数按小端序取用其前 dataSize 个字节，不可为 NULL。
-  * @param  dataSize  待写入字节数，取值范围 1 至 MID_CANOPEN_SDO_EXPEDITED_DATA_SIZE_BYTES（即 1 至 4），
-  *                   取值参见 @ref MID_CANOPEN_Protocol_Constant，必须与被写对象的字典长度一致，
-  *                   否则从站以中止码 0x06070010 拒绝。
-  * @retval MID_CANOPEN_OK            写入成功。
-  * @retval MID_CANOPEN_INVALID_PARAM 参数非法。
-  * @retval MID_CANOPEN_TIMEOUT       等待应答超时。
-  * @retval MID_CANOPEN_ABORTED       从站返回中止码，可读取节点 lastSdoAbortCode。
-  * @retval MID_CANOPEN_ERROR         应答异常或发送失败。
-  * @note   该函数在等待应答期间阻塞，最长 CANOPEN_SDO_TIMEOUT_MS，禁止在中断中调用。
-  */
 MID_CANopenStatusTypeDef MID_CANopen_Sdo_Write(uint8_t nodeId, uint16_t index, uint8_t subIndex,
                                                const void *pData, uint8_t dataSize);
 
-/**
-  * @brief  通过 SDO 加速传输读取对象字典。
-  * @param  nodeId    节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                   取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  index     对象字典索引，取值参见 @ref MID_CANOPEN_OD_Communication_Profile、
-  *                   @ref MID_CANOPEN_OD_Manufacturer_Area 与 @ref MID_CANOPEN_OD_Device_Profile。
-  * @param  subIndex  对象字典子索引，取值参见 @ref MID_CANOPEN_OD_Communication_SubIndex、
-  *                   @ref MID_CANOPEN_OD_Manufacturer_SubIndex 与 @ref MID_CANOPEN_OD_Device_Profile_SubIndex。
-  * @param  pData     接收读回数据的缓冲区指针，容量不小于 dataSize 个字节，不可为 NULL。
-  * @param  dataSize  期望读回的字节数，取值范围 1 至 MID_CANOPEN_SDO_EXPEDITED_DATA_SIZE_BYTES（即 1 至 4），
-  *                   取值参见 @ref MID_CANOPEN_Protocol_Constant，必须与被读对象的字典长度一致，
-  *                   否则返回 MID_CANOPEN_INVALID_PARAM。
-  * @retval MID_CANOPEN_OK            读取成功。
-  * @retval MID_CANOPEN_INVALID_PARAM 参数非法或返回长度与期望不符。
-  * @retval MID_CANOPEN_TIMEOUT       等待应答超时。
-  * @retval MID_CANOPEN_ABORTED       从站返回中止码，可读取节点 lastSdoAbortCode。
-  * @retval MID_CANOPEN_ERROR         应答异常或发送失败。
-  * @note   该函数在等待应答期间阻塞，最长 CANOPEN_SDO_TIMEOUT_MS，禁止在中断中调用。
-  */
 MID_CANopenStatusTypeDef MID_CANopen_Sdo_Read(uint8_t nodeId, uint16_t index, uint8_t subIndex,
                                               void *pData, uint8_t dataSize);
 
@@ -351,115 +264,23 @@ MID_CANopenStatusTypeDef MID_CANopen_Sdo_ReadI8(uint8_t nodeId, uint16_t index, 
 MID_CANopenStatusTypeDef MID_CANopen_Sdo_ReadI16(uint8_t nodeId, uint16_t index, uint8_t subIndex, int16_t *pValue);
 MID_CANopenStatusTypeDef MID_CANopen_Sdo_ReadI32(uint8_t nodeId, uint16_t index, uint8_t subIndex, int32_t *pValue);
 
-/**
-  * @brief  取 PDO 的默认 COB-ID。
-  * @param  nodeId    节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                   取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  pdoIndex  PDO 组号，取 MID_CANopenPdoIndexTypeDef 枚举值，取值参见 @ref MID_CANOPEN_PDO_Index。
-  * @param  isTpdo    true 取 TPDO 的默认 COB-ID，false 取 RPDO 的默认 COB-ID。
-  * @retval PDO 的默认 COB-ID，节点地址或组号非法返回 0。
-  */
 uint32_t MID_CANopen_GetDefaultCobId(uint8_t nodeId, MID_CANopenPdoIndexTypeDef pdoIndex, bool isTpdo);
 
-/**
-  * @brief  配置 RPDO 的通信参数与映射参数。
-  * @param  nodeId            节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                           取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  pdoIndex          PDO 组号，取 MID_CANopenPdoIndexTypeDef 枚举值，取值参见 @ref MID_CANOPEN_PDO_Index。
-  * @param  pMap              指向映射项数组首元素的指针，数组元素个数由 mapCount 指定，
-  *                           元素按 RPDO 数据段中字节出现的先后顺序排列，
-  *                           其中 BitLength 取 MID_CANOPEN_OD_PDO_SIZE_xxx，
-  *                           取值参见 @ref MID_CANOPEN_OD_PDO_Mapping_Entry，mapCount 非 0 时不可为 NULL。
-  * @param  mapCount          映射项个数，取值范围 0 至 MID_CANOPEN_PDO_MAP_ITEM_MAX（即 0 至 8），
-  *                           取值参见 @ref MID_CANOPEN_Protocol_Constant，填 0 表示清空该组映射。
-  * @param  cobId             该组 PDO 使用的 11 位标准帧标识符（不含最高位无效标志），
-  *                           通常取 MID_CANopen_GetDefaultCobId 的返回值，取值参见 @ref MID_CANOPEN_COB_ID_Base。
-  * @param  transmissionType  PDO 传输类型，取值参见 @ref MID_CANOPEN_PDO_Transmission_Type。
-  * @param  eventTimerMs      事件定时器周期，单位毫秒，填 0 表示不启用；RPDO 不使用该参数，任意取值均被忽略。
-  * @retval MID_CANOPEN_OK            配置成功。
-  * @retval MID_CANOPEN_INVALID_PARAM 参数非法。
-  * @retval MID_CANOPEN_TIMEOUT       等待应答超时。
-  * @retval MID_CANOPEN_ABORTED       从站返回中止码。
-  * @retval MID_CANOPEN_ERROR         应答异常或发送失败。
-  * @note   配置顺序遵循手册 3.3.4 示例，先禁用 PDO 再改写映射，最后激活。
-  */
 MID_CANopenStatusTypeDef MID_CANopen_Pdo_ConfigRx(uint8_t nodeId, MID_CANopenPdoIndexTypeDef pdoIndex,
                                                   const MID_CANopenPdoMapTypeDef *pMap, uint8_t mapCount,
                                                   uint32_t cobId, uint8_t transmissionType, uint16_t eventTimerMs);
 
-/**
-  * @brief  配置 TPDO 的通信参数与映射参数。
-  * @param  nodeId            节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                           取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  pdoIndex          PDO 组号，取 MID_CANopenPdoIndexTypeDef 枚举值，取值参见 @ref MID_CANOPEN_PDO_Index。
-  * @param  pMap              指向映射项数组首元素的指针，数组元素个数由 mapCount 指定，
-  *                           元素按 TPDO 数据段中字节出现的先后顺序排列，
-  *                           其中 BitLength 取 MID_CANOPEN_OD_PDO_SIZE_xxx，
-  *                           取值参见 @ref MID_CANOPEN_OD_PDO_Mapping_Entry，mapCount 非 0 时不可为 NULL。
-  * @param  mapCount          映射项个数，取值范围 0 至 MID_CANOPEN_PDO_MAP_ITEM_MAX（即 0 至 8），
-  *                           取值参见 @ref MID_CANOPEN_Protocol_Constant，填 0 表示清空该组映射。
-  * @param  cobId             该组 PDO 使用的 11 位标准帧标识符（不含最高位无效标志），
-  *                           通常取 MID_CANopen_GetDefaultCobId 的返回值，取值参见 @ref MID_CANOPEN_COB_ID_Base。
-  * @param  transmissionType  PDO 传输类型，取值参见 @ref MID_CANOPEN_PDO_Transmission_Type。
-  * @param  eventTimerMs      事件定时器周期，单位毫秒，填 0 表示不启用；仅异步周期发送时有效。
-  * @retval MID_CANOPEN_OK            配置成功。
-  * @retval MID_CANOPEN_INVALID_PARAM 参数非法。
-  * @retval MID_CANOPEN_TIMEOUT       等待应答超时。
-  * @retval MID_CANOPEN_ABORTED       从站返回中止码。
-  * @retval MID_CANOPEN_ERROR         应答异常或发送失败。
-  * @note   自动传输方向下的 TPDO 为异步周期发送时，需保证节点处于操作状态。
-  */
 MID_CANopenStatusTypeDef MID_CANopen_Pdo_ConfigTx(uint8_t nodeId, MID_CANopenPdoIndexTypeDef pdoIndex,
                                                   const MID_CANopenPdoMapTypeDef *pMap, uint8_t mapCount,
                                                   uint32_t cobId, uint8_t transmissionType, uint16_t eventTimerMs);
 
-/**
-  * @brief  发送一帧 RPDO 数据。
-  * @param  nodeId    节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                   取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  pdoIndex  PDO 组号，取 MID_CANopenPdoIndexTypeDef 枚举值，取值参见 @ref MID_CANOPEN_PDO_Index。
-  * @param  pData     指向待发送数据首字节的指针，函数发送其前 length 个字节，不可为 NULL。
-  * @param  length    发送字节数，取值范围 0 至 MID_CANOPEN_FRAME_DATA_SIZE_BYTES（即 0 至 8），
-  *                   取值参见 @ref MID_CANOPEN_Protocol_Constant，应与该组 RPDO 映射的总长度一致。
-  * @retval MID_CANOPEN_OK            发送成功。
-  * @retval MID_CANOPEN_INVALID_PARAM 参数非法。
-  * @retval MID_CANOPEN_TIMEOUT       发送邮箱等待超时。
-  * @retval MID_CANOPEN_ERROR         发送失败。
-  */
 MID_CANopenStatusTypeDef MID_CANopen_Rpdo_Send(uint8_t nodeId, MID_CANopenPdoIndexTypeDef pdoIndex,
                                                const uint8_t *pData, uint8_t length);
 
-/**
-  * @brief  读取最近一次接收到的 TPDO 数据。
-  * @param  nodeId    节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                   取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  pdoIndex  PDO 组号，取 MID_CANopenPdoIndexTypeDef 枚举值，取值参见 @ref MID_CANOPEN_PDO_Index。
-  * @param  pData     接收 TPDO 数据的缓冲区指针，容量不小于 MID_CANOPEN_FRAME_DATA_SIZE_BYTES 个字节，
-  *                   该长度定义于 @ref MID_CANOPEN_Protocol_Constant，不可为 NULL。
-  * @param  pLength   指向接收本次数据长度的变量的指针，单位字节，不可为 NULL。
-  * @retval true   读取成功。
-  * @retval false  参数非法或该组 TPDO 尚无数据。
-  */
 bool MID_CANopen_GetTpdo(uint8_t nodeId, MID_CANopenPdoIndexTypeDef pdoIndex, uint8_t *pData, uint8_t *pLength);
 
-/**
-  * @brief  将 SDO 中止码转换为可读文本。
-  * @param  abortCode  SDO 中止码，32 位，取值参见 @ref MID_CANOPEN_SDO_Abort_Code。
-  * @retval 中止码文本，未知中止码返回 unknown。
-  */
 const char *MID_CANopen_SdoAbortToString(uint32_t abortCode);
 
-/**
-  * @brief  TPDO 数据到达回调。
-  * @param  nodeId    节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                   取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  pdoIndex  PDO 组号，取 MID_CANopenPdoIndexTypeDef 枚举值，取值参见 @ref MID_CANOPEN_PDO_Index。
-  * @param  pData     指向本帧 TPDO 数据首字节的指针，指向节点内部缓存，回调返回后可能被下一帧覆盖，需要留存请自行拷贝。
-  * @param  length    本帧数据长度，单位字节，最大值 MID_CANOPEN_FRAME_DATA_SIZE_BYTES，
-  *                   该上限定义于 @ref MID_CANOPEN_Protocol_Constant。
-  * @retval None
-  * @note   默认实现为空，应用层可重定义以替换。
-  */
 void MID_CANopen_TpdoReceivedCallback(uint8_t nodeId, MID_CANopenPdoIndexTypeDef pdoIndex,
                                       const uint8_t *pData, uint8_t length);
 

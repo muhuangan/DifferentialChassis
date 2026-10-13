@@ -41,6 +41,7 @@ extern "C" {
 #define CANOPEN_TX_TIMEOUT_MS             10U    /**< 发送邮箱等待空闲的超时，单位毫秒。 */
 #define CANOPEN_SDO_TIMEOUT_MS            100U   /**< 单次 SDO 请求等待应答的超时，单位毫秒。 */
 #define CANOPEN_HEARTBEAT_TIMEOUT_MS      3000U  /**< 心跳帧丢失判定从站离线的超时，单位毫秒。 */
+#define CANOPEN_BUSOFF_RECOVERY_PERIOD_MS 500U   /**< 总线关闭（Bus-Off）自恢复的最短间隔，单位毫秒。 */
 /**
   * @}
   */

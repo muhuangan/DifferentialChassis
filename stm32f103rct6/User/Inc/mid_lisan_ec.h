@@ -36,13 +36,18 @@ extern "C" {
 /**
   * @defgroup MID_LISAN_EC_Operation_Mode Lisan EC Operation Mode
   * @{
+  * @note   取值依据手册 4.2「工作模式」入口表（p30）：6060H=1 轮廓位置、6060H=3 轮廓速度、
+  *         6060H=4 力矩、6060H=6 回原点，与手册 4.2.1 至 4.2.4 各模式的「主要对象字典」表一致。
+  * @note   手册个别示例报文存在笔误：4.2.2 轮廓速度模式示例首帧写成 2F 60 60 00 01（0x6060=1），
+  *         4.2.4 力矩模式参数表写成「0x6060=4(03h)」，均与 p30 入口表及其自身参数表矛盾，
+  *         本模块以 p30 入口表为准，不随示例报文改动。
   */
 typedef enum
 {
-  MID_LISAN_EC_MODE_PROFILE_POSITION = 0x01U, /**< 轮廓位置模式，对应 0x6060 写入 1。 */
-  MID_LISAN_EC_MODE_PROFILE_VELOCITY = 0x03U, /**< 轮廓速度模式，对应 0x6060 写入 3。 */
-  MID_LISAN_EC_MODE_PROFILE_TORQUE   = 0x04U, /**< 力矩模式，对应 0x6060 写入 4，仅闭环机型支持。 */
-  MID_LISAN_EC_MODE_HOMING           = 0x06U  /**< 回原点模式，对应 0x6060 写入 6。 */
+  MID_LISAN_EC_MODE_PROFILE_POSITION = 0x01U, /**< 轮廓位置模式（PP），对应 0x6060 写入 1。 */
+  MID_LISAN_EC_MODE_PROFILE_VELOCITY = 0x03U, /**< 轮廓速度模式（PV），对应 0x6060 写入 3。 */
+  MID_LISAN_EC_MODE_PROFILE_TORQUE   = 0x04U, /**< 力矩模式（PT），对应 0x6060 写入 4，仅闭环机型支持。 */
+  MID_LISAN_EC_MODE_HOMING           = 0x06U  /**< 回原点模式（HM），对应 0x6060 写入 6。 */
 } MID_LisanEcModeTypeDef;
 /**
   * @}
@@ -65,13 +70,25 @@ typedef enum
 /**
   * @defgroup MID_LISAN_EC_Control_Word Lisan EC Control Word 0x6040
   * @{
+  * @note   手册 4.1.2 控制字 6040h（p26）规定：每一个 bit 单独赋值无意义，必须与其他位共同构成一条控制指令；
+  *         其中 bit0~bit3 共同组成一条 CiA402 状态机切换命令（手册 4.1.1 控制命令与状态切换表，p25），
+  *         bit2 为低有效的快速停机、bit7 为上升沿有效的故障复位、bit8 为减速停止。
+  *         因此本组常量一律按「一条完整命令」给出，而不是单独的位掩码。
+  * @note   手册自身存在互相矛盾处，本模块按「可执行报文优先、状态机表次之」处理，差异记录如下：
+  *         - 减速停止：手册 4.2.2（p37）与 4.2.4（p50）的汇总表均给 010Fh，即 0Fh 叠加 bit8；
+  *           而手册 PP/HM 示例报文（p34、p35、p48）写的是 0100h。0100h 的 bit0~bit3 为 0000，
+  *           按 4.1.1 属于「伺服运行→伺服无故障」的脱机命令，无法表达「按减速斜坡停止」，
+  *           故采用汇总表的 010Fh，保证停止全过程驱动器仍处于伺服运行状态。
+  *         - 快速停机：手册 4.1.2（p26）要求满足（**** **** 0*** *01*），手册 4.1.1（p25）状态切换 11
+  *           与全部示例报文（p34、p35、p38、p48）均为 0002h；仅手册 4.2.2（p37）汇总表写 00Bh，
+  *           且 00Bh 不是 4.1.1 列出的任何一条状态切换命令，判定为汇总表笔误，保留 0002h。
   */
-#define MID_LISAN_EC_CONTROL_WORD_MOTOR_FREE        0x0006U      /**< bit1 置位，脱机取消锁轴。 */
-#define MID_LISAN_EC_CONTROL_WORD_MOTOR_LOCK        0x0007U      /**< bit0 至 bit2 置位，锁机启动状态。 */
-#define MID_LISAN_EC_CONTROL_WORD_ENABLE_OPERATION  0x000FU      /**< bit0 至 bit3 置位，接通主电允许运行。 */
-#define MID_LISAN_EC_CONTROL_WORD_QUICK_STOP        0x0002U      /**< bit2 为 0，启动快速停机。 */
-#define MID_LISAN_EC_CONTROL_WORD_FAULT_RESET       0x0080U      /**< bit7 上升沿复位可复位故障。 */
-#define MID_LISAN_EC_CONTROL_WORD_HALT              0x0100U      /**< bit8 置位，电机轴减速停止。 */
+#define MID_LISAN_EC_CONTROL_WORD_MOTOR_FREE        0x0006U      /**< 脱机取消锁轴，对应手册 4.1.1 状态切换 2（伺服无故障→伺服准备好）。 */
+#define MID_LISAN_EC_CONTROL_WORD_MOTOR_LOCK        0x0007U      /**< 锁机启动状态，对应手册 4.1.1 状态切换 3（伺服准备好→等待打开伺服使能）。 */
+#define MID_LISAN_EC_CONTROL_WORD_ENABLE_OPERATION  0x000FU      /**< 接通主电允许运行，对应手册 4.1.1 状态切换 4（等待打开伺服使能→伺服运行）。 */
+#define MID_LISAN_EC_CONTROL_WORD_QUICK_STOP        0x0002U      /**< 快速停机，满足手册 4.1.2 的（**** **** 0*** *01*），即 4.1.1 状态切换 11 的 0x02。 */
+#define MID_LISAN_EC_CONTROL_WORD_FAULT_RESET       0x0080U      /**< 故障复位，bit7 上升沿有效，对应手册 4.1.1 状态切换 15。 */
+#define MID_LISAN_EC_CONTROL_WORD_HALT              0x010FU      /**< 减速停止，由运行命令 0Fh 叠加 bit8 组成，对应手册 4.2.2「运行」表的 010Fh。 */
 #define MID_LISAN_EC_CONTROL_WORD_NEW_SETPOINT      (1U << 4U)   /**< bit4 由 0 跳变为 1 触发新的位置指令。 */
 #define MID_LISAN_EC_CONTROL_WORD_SETPOINT_NOW      (1U << 5U)   /**< bit5 置位表示中断当前指令立即执行新位置。 */
 #define MID_LISAN_EC_CONTROL_WORD_RELATIVE_POSITION (1U << 6U)   /**< bit6 置位表示目标位置为相对位置。 */
@@ -205,417 +222,86 @@ typedef struct
   bool     isHomingAttained;       /**< bit15 原点回零完成。 */
 } MID_LisanEcStatusWordTypeDef;
 
-/**
-  * @brief  使能驱动器。
-  * @param  nodeId  节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                 取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @retval MID_CANOPEN_OK 使能成功。
-  * @retval 其他          SDO 接口错误码。
-  * @note   依次写入控制字 0x06、0x07、0x0F，完成 CiA402 状态机切换。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_EnableDrive(uint8_t nodeId);
 
-/**
-  * @brief  写入控制字 0x6040。
-  * @param  nodeId       节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                      取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  controlWord  控制字数值，写入 0x6040，取值参见 @ref MID_LISAN_EC_Control_Word。
-  * @retval MID_CANOPEN_OK 写入成功。
-  * @retval 其他          SDO 接口错误码。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_WriteControlWord(uint8_t nodeId, uint16_t controlWord);
 
-/**
-  * @brief  读取控制字 0x6040。
-  * @param  nodeId        节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                       取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  pControlWord  指向接收 0x6040 控制字原始数值的变量的指针，取值参见 @ref MID_LISAN_EC_Control_Word，
-  *                       不可为 NULL。
-  * @retval MID_CANOPEN_OK 读取成功。
-  * @retval 其他          SDO 接口错误码。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_ReadControlWord(uint8_t nodeId, uint16_t *pControlWord);
 
-/**
-  * @brief  电机脱机，取消锁轴状态。
-  * @param  nodeId  节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                 取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @retval MID_CANOPEN_OK 操作成功。
-  * @retval 其他          SDO 接口错误码。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_SetMotorFree(uint8_t nodeId);
 
-/**
-  * @brief  电机锁机，锁定在当前位置。
-  * @param  nodeId  节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                 取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @retval MID_CANOPEN_OK 操作成功。
-  * @retval 其他          SDO 接口错误码。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_SetMotorLock(uint8_t nodeId);
 
-/**
-  * @brief  启动快速停机。
-  * @param  nodeId  节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                 取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @retval MID_CANOPEN_OK 操作成功。
-  * @retval 其他          SDO 接口错误码。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_QuickStop(uint8_t nodeId);
 
-/**
-  * @brief  减速停止。
-  * @param  nodeId  节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                 取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @retval MID_CANOPEN_OK 操作成功。
-  * @retval 其他          SDO 接口错误码。
-  * @note   清除减速停止信号后电机运行状态不恢复，需要重新切换状态机。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_Halt(uint8_t nodeId);
 
-/**
-  * @brief  复位可复位故障，清除控制字的 bit4 至 bit6。
-  * @param  nodeId  节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                 取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @retval MID_CANOPEN_OK 复位指令已发出。
-  * @retval 其他          SDO 接口错误码。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_FaultReset(uint8_t nodeId);
 
-/**
-  * @brief  设置工作模式 0x6060。
-  * @param  nodeId  节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                 取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  mode    工作模式，取 MID_LisanEcModeTypeDef 枚举值，取值参见 @ref MID_LISAN_EC_Operation_Mode。
-  * @retval MID_CANOPEN_OK            设置成功。
-  * @retval MID_CANOPEN_INVALID_PARAM 模式非法。
-  * @retval 其他                      SDO 接口错误码。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_SetOperationMode(uint8_t nodeId, MID_LisanEcModeTypeDef mode);
 
-/**
-  * @brief  读取当前工作模式 0x6061。
-  * @param  nodeId  节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                 取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  pMode   指向接收 0x6061 当前工作模式的变量的指针，取值参见 @ref MID_LISAN_EC_Operation_Mode，不可为 NULL。
-  * @retval MID_CANOPEN_OK 读取成功。
-  * @retval 其他          SDO 接口错误码。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_ReadOperationMode(uint8_t nodeId, MID_LisanEcModeTypeDef *pMode);
 
-/**
-  * @brief  设置电机细分 0x2001。
-  * @param  nodeId         节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                        取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  pulsePerRound  电机运行一圈所需脉冲数，写入 0x2001，由细分倍数与编码器线数共同决定。
-  * @retval MID_CANOPEN_OK 设置成功。
-  * @retval 其他          SDO 接口错误码。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_SetMicroStep(uint8_t nodeId, uint32_t pulsePerRound);
 
-/**
-  * @brief  设置驱动器峰值电流 0x2000。
-  * @param  nodeId     节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                    取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  currentMa  峰值电流，单位毫安，写入 0x2000，不得超过电机额定电流。
-  * @retval MID_CANOPEN_OK 设置成功。
-  * @retval 其他          SDO 接口错误码。
-  * @note   电流设置过大可能损坏电机，需按电机额定电流设置。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_SetPeakCurrent(uint8_t nodeId, uint16_t currentMa);
 
-/**
-  * @brief  设置平滑时间 0x2002。
-  * @param  nodeId        节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                       取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  smoothTimeMs  平滑时间，单位毫秒，写入 0x2002，驱动器接受的范围为 1 至 1500。
-  * @retval MID_CANOPEN_OK 设置成功。
-  * @retval 其他          SDO 接口错误码。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_SetSmoothTime(uint8_t nodeId, uint16_t smoothTimeMs);
 
-/**
-  * @brief  设置最小电流参数 0x2003。
-  * @param  nodeId          节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                         取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  minimumCurrent  最小电流参数原始值，写入 0x2003；开环机型低 8 位为半流状态电流百分比，
-  *                         闭环机型高低字节含义不同。
-  * @retval MID_CANOPEN_OK 设置成功。
-  * @retval 其他              SDO 接口错误码。
-  * @note   开环机型低 8 位表示半流状态电流百分比，闭环机型高低字节含义不同，需按机型换算。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_SetMinimumCurrent(uint8_t nodeId, uint16_t minimumCurrent);
 
-/**
-  * @brief  设置电机运行方向 0x2051。
-  * @param  nodeId     节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                    取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  direction  电机运行方向，取 MID_LISAN_EC_DIRECTION_xxx，取值参见 @ref MID_LISAN_EC_Direction。
-  * @retval MID_CANOPEN_OK 设置成功。
-  * @retval 其他          SDO 接口错误码。
-  * @note   不可在运行状态下修改。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_SetMotorDirection(uint8_t nodeId, uint16_t direction);
 
-/**
-  * @brief  设置梯形加速度 0x6083。
-  * @param  nodeId        节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                       取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  acceleration  梯形加速度，单位脉冲每平方秒，写入 0x6083。
-  * @retval MID_CANOPEN_OK 设置成功。
-  * @retval 其他          SDO 接口错误码。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_SetProfileAcceleration(uint8_t nodeId, uint32_t acceleration);
 
-/**
-  * @brief  设置梯形减速度 0x6084。
-  * @param  nodeId        节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                       取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  deceleration  梯形减速度，单位脉冲每平方秒，写入 0x6084。
-  * @retval MID_CANOPEN_OK 设置成功。
-  * @retval 其他          SDO 接口错误码。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_SetProfileDeceleration(uint8_t nodeId, uint32_t deceleration);
 
-/**
-  * @brief  设置位置模式梯形速度 0x6081。
-  * @param  nodeId    节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                   取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  velocity  位置模式下允许的最大速度，单位脉冲每秒，写入 0x6081，只有大小没有方向。
-  * @retval MID_CANOPEN_OK 设置成功。
-  * @retval 其他          SDO 接口错误码。
-  * @note   位置模式下速度只有大小，方向由目标位置决定。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_SetProfileVelocity(uint8_t nodeId, uint32_t velocity);
 
-/**
-  * @brief  设置目标位置 0x607A。
-  * @param  nodeId    节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                   取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  position  目标位置，单位脉冲，写入 0x607A。
-  * @retval MID_CANOPEN_OK 设置成功。
-  * @retval 其他          SDO 接口错误码。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_SetTargetPosition(uint8_t nodeId, int32_t position);
 
-/**
-  * @brief  设置目标速度 0x60FF。
-  * @param  nodeId    节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                   取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  velocity  目标速度，单位脉冲每秒，写入 0x60FF，符号表示方向。
-  * @retval MID_CANOPEN_OK 设置成功。
-  * @retval 其他          SDO 接口错误码。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_SetTargetVelocity(uint8_t nodeId, int32_t velocity);
 
-/**
-  * @brief  设置目标力矩 0x6071。
-  * @param  nodeId  节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                 取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  torque  力矩等级，写入 0x6071，数值表示大小，符号表示方向，取值参见 @ref MID_LISAN_EC_Torque_Range。
-  * @retval MID_CANOPEN_OK 设置成功。
-  * @retval 其他          SDO 接口错误码。
-  * @note   运行中只能修改力矩大小，方向修改无效。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_SetTargetTorque(uint8_t nodeId, int16_t torque);
 
-/**
-  * @brief  设置最大力矩 0x6072。
-  * @param  nodeId     节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                    取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  maxTorque  最大力矩等级，写入 0x6072，数值越大可达到的最大电流越大，
-  *                    取值参见 @ref MID_LISAN_EC_Torque_Range。
-  * @retval MID_CANOPEN_OK 设置成功。
-  * @retval 其他          SDO 接口错误码。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_SetMaxTorque(uint8_t nodeId, uint16_t maxTorque);
 
-/**
-  * @brief  配置力矩模式参数 0x2158。
-  * @param  nodeId       节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                      取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  torqueMode   力矩工作方式，取 MID_LisanEcTorqueModeTypeDef 枚举值，写入 0x2158 子索引 1，
-  *                      取值参见 @ref MID_LISAN_EC_Torque_Mode。
-  * @param  offsetPulse  偏移脉冲，写入 0x2158 子索引 2，碰撞回原点与抓取物体时有效，
-  *                      取值参见 @ref MID_LISAN_EC_Torque_Range。
-  * @param  maxSpeed     力矩模式速度限制，单位转每分钟，写入 0x2158 子索引 3。
-  * @retval MID_CANOPEN_OK 设置成功。
-  * @retval 其他          SDO 接口错误码。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_ConfigureTorqueMode(uint8_t nodeId, MID_LisanEcTorqueModeTypeDef torqueMode,
                                                          uint16_t offsetPulse, uint16_t maxSpeed);
 
-/**
-  * @brief  配置回原点参数。
-  * @param  nodeId        节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                       取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  method        回原点方式，写入 0x6098，取值参见 @ref MID_LISAN_EC_Homing_Method。
-  * @param  fastSpeed     快速回原点速度，单位脉冲每秒，写入 0x6099 子索引 1，最高位表示方向。
-  * @param  slowSpeed     慢速回原点速度，单位脉冲每秒，写入 0x6099 子索引 2，最高位表示方向。
-  * @param  acceleration  回原点加速度，单位脉冲每平方秒，写入 0x609A。
-  * @retval MID_CANOPEN_OK 设置成功。
-  * @retval 其他          SDO 接口错误码。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_ConfigureHoming(uint8_t nodeId, uint8_t method, uint32_t fastSpeed,
                                                      uint32_t slowSpeed, uint32_t acceleration);
 
-/**
-  * @brief  以绝对位置方式启动轮廓位置模式运动。
-  * @param  nodeId       节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                      取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  position     目标位置，单位脉冲，写入 0x607A。
-  * @param  isImmediate  true 表示中断当前指令立即执行，false 表示等待当前指令执行完成后再生效。
-  * @retval MID_CANOPEN_OK 指令已下发。
-  * @retval 其他          SDO 接口错误码。
-  * @note   调用前需完成模式设置与使能，并已设置好加减速与梯形速度。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_MoveAbsolute(uint8_t nodeId, int32_t position, bool isImmediate);
 
-/**
-  * @brief  以相对位置方式启动轮廓位置模式运动。
-  * @param  nodeId         节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                        取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  deltaPosition  相对位移，单位脉冲，写入 0x607A，符号表示方向。
-  * @param  isImmediate    true 表示中断当前指令立即执行，false 表示等待当前指令执行完成后再生效。
-  * @retval MID_CANOPEN_OK 指令已下发。
-  * @retval 其他          SDO 接口错误码。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_MoveRelative(uint8_t nodeId, int32_t deltaPosition, bool isImmediate);
 
-/**
-  * @brief  清除新的位置指令。
-  * @param  nodeId  节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                 取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @retval MID_CANOPEN_OK 操作成功。
-  * @retval 其他          SDO 接口错误码。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_ClearSetpoint(uint8_t nodeId);
 
-/**
-  * @brief  启动回原点运动。
-  * @param  nodeId  节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                 取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @retval MID_CANOPEN_OK 指令已下发。
-  * @retval 其他          SDO 接口错误码。
-  * @note   内部按 0x07、0x0F、0x1F 顺序下发控制字。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_StartHoming(uint8_t nodeId);
 
-/**
-  * @brief  读取并解析状态字 0x6041。
-  * @param  nodeId   节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                  取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  pStatus  指向接收 0x6041 状态字解析结果的指针，取值参见 @ref MID_LISAN_EC_Status_Word，不可为 NULL。
-  * @retval MID_CANOPEN_OK 读取成功。
-  * @retval 其他          SDO 接口错误码。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_ReadStatusWord(uint8_t nodeId, MID_LisanEcStatusWordTypeDef *pStatus);
 
-/**
-  * @brief  读取实际位置 0x6064。
-  * @param  nodeId     节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                    取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  pPosition  指向接收 0x6064 实际位置的变量的指针，单位脉冲，不可为 NULL。
-  * @retval MID_CANOPEN_OK 读取成功。
-  * @retval 其他          SDO 接口错误码。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_ReadPosition(uint8_t nodeId, int32_t *pPosition);
 
-/**
-  * @brief  读取实际速度 0x606C。
-  * @param  nodeId     节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                    取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  pVelocity  指向接收 0x606C 实际速度的变量的指针，单位脉冲每秒，不可为 NULL。
-  * @retval MID_CANOPEN_OK 读取成功。
-  * @retval 其他          SDO 接口错误码。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_ReadVelocity(uint8_t nodeId, int32_t *pVelocity);
 
-/**
-  * @brief  读取实时电流 0x6078。
-  * @param  nodeId    节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                   取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  pCurrent  指向接收 0x6078 实时电流的变量的指针，单位毫安，不可为 NULL。
-  * @retval MID_CANOPEN_OK 读取成功。
-  * @retval 其他          SDO 接口错误码。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_ReadCurrent(uint8_t nodeId, int16_t *pCurrent);
 
-/**
-  * @brief  读取驱动器错误代码 0x603F。
-  * @param  nodeId      节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                     取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  pErrorCode  指向接收 0x603F 错误代码的变量的指针，取值参见 @ref MID_LISAN_EC_Error_Code，不可为 NULL。
-  * @retval MID_CANOPEN_OK 读取成功。
-  * @retval 其他          SDO 接口错误码。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_ReadErrorCode(uint8_t nodeId, uint16_t *pErrorCode);
 
-/**
-  * @brief  读取输入口与电机状态 0x60FD。
-  * @param  nodeId   节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                  取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  pInputs  指向接收 0x60FD 输入口与电机状态位图的变量的指针，bit0 至 bit7 对应 IN1 至 IN8，不可为 NULL。
-  * @retval MID_CANOPEN_OK 读取成功。
-  * @retval 其他          SDO 接口错误码。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_ReadDigitalInputs(uint8_t nodeId, uint32_t *pInputs);
 
-/**
-  * @brief  设置从站地址 0x2150 与地址来源 0x2151。
-  * @param  nodeId        节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                       取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  newAddress    新的从站地址，写入 0x2150，
-  *                       合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                       取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  isFromObject  true 表示地址来源为对象字典 0x2150，false 表示拨码开关与 0x2150 之和，
-  *                       取值参见 @ref MID_LISAN_EC_Address_Source。
-  * @retval MID_CANOPEN_OK            设置成功。
-  * @retval MID_CANOPEN_INVALID_PARAM 地址非法。
-  * @retval 其他                      SDO 接口错误码。
-  * @note   掉电重启后生效，需配合 MID_LisanEc_StoreParameters 保存。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_SetNodeAddress(uint8_t nodeId, uint16_t newAddress, bool isFromObject);
 
-/**
-  * @brief  保存全部参数 0x1010 子索引 1。
-  * @param  nodeId  节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                 取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @retval MID_CANOPEN_OK 保存指令已发出。
-  * @retval 其他          SDO 接口错误码。
-  * @note   驱动器保存完成后重启，通信会短暂中断。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_StoreParameters(uint8_t nodeId);
 
-/**
-  * @brief  恢复全部出厂参数 0x1011 子索引 1。
-  * @param  nodeId  节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                 取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @retval MID_CANOPEN_OK 恢复指令已发出。
-  * @retval 其他          SDO 接口错误码。
-  */
 MID_CANopenStatusTypeDef MID_LisanEc_RestoreDefault(uint8_t nodeId);
 
-/**
-  * @brief  解析状态字得到 CiA402 驱动状态。
-  * @param  statusWord  状态字 0x6041 原始数值，取值参见 @ref MID_LISAN_EC_Status_Word。
-  * @retval 驱动状态。
-  */
 MID_LisanEcStateTypeDef MID_LisanEc_ParseState(uint16_t statusWord);
 
-/**
-  * @brief  解析状态字到结构体。
-  * @param  statusWord  状态字 0x6041 原始数值，取值参见 @ref MID_LISAN_EC_Status_Word。
-  * @param  pStatus     指向接收解析结果的指针，成员与 0x6041 各位一一对应，不可为 NULL。
-  * @retval None
-  */
 void MID_LisanEc_ParseStatusWord(uint16_t statusWord, MID_LisanEcStatusWordTypeDef *pStatus);
 
-/**
-  * @brief  将错误代码转换为可读文本。
-  * @param  errorCode  错误代码 0x603F，取值参见 @ref MID_LISAN_EC_Error_Code。
-  * @retval 错误文本，无故障返回 no error，未知代码返回 unknown。
-  */
 const char *MID_LisanEc_ErrorCodeToString(uint16_t errorCode);
 
 #ifdef __cplusplus

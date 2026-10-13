@@ -148,6 +148,22 @@ standard names. */
 
 /* USER CODE BEGIN Defines */
 /* Section where parameter definitions can be added (for instance, to override default ones in FreeRTOS.h) */
+
+/* 内核头文件为 V10.3.1，而工程使用的 GCC/ARM_CM3 端口来自更新的内核版本，port.c 与 portmacro.h
+   中引用了 traceISR_ENTER / traceISR_EXIT / traceISR_EXIT_TO_SCHEDULER 这三个 Percepio 跟踪钩子，
+   V10.3.1 的 FreeRTOS.h 尚未提供它们的默认空实现。此处补上默认定义，语义等同于新版本内核的默认行为。
+   若日后接入跟踪工具，只需在其头文件中提供同名实现即可覆盖。 */
+#ifndef traceISR_ENTER
+#define traceISR_ENTER()
+#endif
+
+#ifndef traceISR_EXIT
+#define traceISR_EXIT()
+#endif
+
+#ifndef traceISR_EXIT_TO_SCHEDULER
+#define traceISR_EXIT_TO_SCHEDULER()
+#endif
 /* USER CODE END Defines */
 
 #endif /* FREERTOS_CONFIG_H */

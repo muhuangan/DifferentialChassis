@@ -25,7 +25,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "app_chassis_link.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -154,11 +154,8 @@ __weak void StartTaskLow(void *argument)
 __weak void StartTaskHigh(void *argument)
 {
   /* USER CODE BEGIN StartTaskHigh */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
+  /* 底盘链路任务自带死循环，内部完成等待信号量、解析帧与转速下发。 */
+  APP_ChassisLink_Task(argument);
   /* USER CODE END StartTaskHigh */
 }
 

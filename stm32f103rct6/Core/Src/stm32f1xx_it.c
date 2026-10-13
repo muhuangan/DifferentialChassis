@@ -22,6 +22,7 @@
 #include "stm32f1xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "mid_uart_ring.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -61,14 +62,12 @@ extern TIM_HandleTypeDef htim1;
 extern TIM_HandleTypeDef htim2;
 extern DMA_HandleTypeDef hdma_uart4_rx;
 extern DMA_HandleTypeDef hdma_uart4_tx;
-extern DMA_HandleTypeDef hdma_usart1_rx;
 extern DMA_HandleTypeDef hdma_usart2_rx;
 extern DMA_HandleTypeDef hdma_usart2_tx;
 extern DMA_HandleTypeDef hdma_usart3_rx;
 extern DMA_HandleTypeDef hdma_usart3_tx;
 extern UART_HandleTypeDef huart4;
 extern UART_HandleTypeDef huart5;
-extern UART_HandleTypeDef huart1;
 extern UART_HandleTypeDef huart2;
 extern UART_HandleTypeDef huart3;
 extern TIM_HandleTypeDef htim7;
@@ -232,20 +231,6 @@ void DMA1_Channel3_IRQHandler(void)
 }
 
 /**
-  * @brief This function handles DMA1 channel5 global interrupt.
-  */
-void DMA1_Channel5_IRQHandler(void)
-{
-  /* USER CODE BEGIN DMA1_Channel5_IRQn 0 */
-
-  /* USER CODE END DMA1_Channel5_IRQn 0 */
-  HAL_DMA_IRQHandler(&hdma_usart1_rx);
-  /* USER CODE BEGIN DMA1_Channel5_IRQn 1 */
-
-  /* USER CODE END DMA1_Channel5_IRQn 1 */
-}
-
-/**
   * @brief This function handles DMA1 channel6 global interrupt.
   */
 void DMA1_Channel6_IRQHandler(void)
@@ -316,20 +301,6 @@ void TIM2_IRQHandler(void)
 }
 
 /**
-  * @brief This function handles USART1 global interrupt.
-  */
-void USART1_IRQHandler(void)
-{
-  /* USER CODE BEGIN USART1_IRQn 0 */
-
-  /* USER CODE END USART1_IRQn 0 */
-  HAL_UART_IRQHandler(&huart1);
-  /* USER CODE BEGIN USART1_IRQn 1 */
-
-  /* USER CODE END USART1_IRQn 1 */
-}
-
-/**
   * @brief This function handles USART2 global interrupt.
   */
 void USART2_IRQHandler(void)
@@ -363,7 +334,10 @@ void USART3_IRQHandler(void)
 void UART4_IRQHandler(void)
 {
   /* USER CODE BEGIN UART4_IRQn 0 */
-
+  /* 空闲中断钩子必须先于 HAL_UART_IRQHandler 执行，并在钩子内清掉空闲标志。本工程使用
+     HAL_UART_Receive_DMA 启动接收，HAL 的接收类型为标准模式，不会消费空闲标志，
+     若不在此处清除会导致中断反复触发。 */
+  MID_UartRing_IdleIrqHandler(&huart4);
   /* USER CODE END UART4_IRQn 0 */
   HAL_UART_IRQHandler(&huart4);
   /* USER CODE BEGIN UART4_IRQn 1 */
@@ -405,7 +379,9 @@ void TIM7_IRQHandler(void)
 void DMA2_Channel3_IRQHandler(void)
 {
   /* USER CODE BEGIN DMA2_Channel3_IRQn 0 */
-
+  /* 只在 HAL_DMA_IRQHandler 之前读取传输完成标志，作为串口空闲中断的兜底通知；
+     标志清除仍由随后的 HAL_DMA_IRQHandler 负责，此处不重复处理。 */
+  MID_UartRing_DmaLapIrqHandler(&hdma_uart4_rx);
   /* USER CODE END DMA2_Channel3_IRQn 0 */
   HAL_DMA_IRQHandler(&hdma_uart4_rx);
   /* USER CODE BEGIN DMA2_Channel3_IRQn 1 */

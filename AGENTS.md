@@ -183,7 +183,8 @@ static HAL_StatusTypeDef APP_Comm_ParseFrame(const uint8_t *pData, uint16_t leng
 - 全局变量：`g_` 前缀，如 `g_appState`。
 - 静态变量：`s_` 前缀，如 `s_uartHandle`。
 - 指针：`p` 前缀，如 `pData`、`pFrame`。
-- 句柄：`h` 前缀，如 `huart1`、`htim2`。
+- 句柄：`h` 前缀，如 `huart1`、`htim2`；指向 HAL 句柄的指针也一律用 `h`，如 `CAN_HandleTypeDef *hcan`、`UART_HandleTypeDef *huart`、`DMA_HandleTypeDef *hdma`，禁止写成 `pHcan`、`pUart`、`pHdma`。
+- RTOS 句柄（`osSemaphoreId_t`、`osThreadId_t`、`osMessageQueueId_t`、`TaskHandle_t` 等）同样用 `h`，静态句柄为 `s_h` 开头，如 `s_hRxSemaphore`；只有控制块与属性结构体沿用 `s_` 前缀，如 `s_rxSemaphoreBuffer`、`s_rxSemaphoreAttr`。
 - 布尔：`is`、`has`、`can` 开头，如 `isReady`、`hasError`。
 - 常量：优先 `#define` 或 `const`，全大写或大驼峰，带单位。
 
@@ -323,6 +324,22 @@ typedef enum {
 ### 4.2 函数注释
 
 所有对外函数、重要私有函数必须使用 Doxygen。
+函数 Doxygen 注释一律写在 `.c` 的函数定义处，`.h` 中只保留函数声明，不重复放置函数注释。
+类型、宏、枚举的注释仍随其定义放在 `.h`。
+
+注释必须说明函数实际做了什么，禁止同义反复复述函数名。
+`@brief` 用一句话概括职责；凡是有流程、有分支或有副作用的函数，都要用 `@note` 写清关键步骤与处理顺序、
+写入了哪个对象或寄存器、失败时是否继续、门限与限幅取自哪个宏。
+`@brief 底盘链路任务`、`@brief 注册从站节点` 这类不含新增信息的写法一律不接受。
+
+`.h` 只放声明：
+
+```c
+HAL_StatusTypeDef BSP_Led_Init(void);
+HAL_StatusTypeDef APP_Comm_SendFrame(const uint8_t *pData, uint16_t length);
+```
+
+`.c` 在函数定义处写 Doxygen：
 
 ```c
 /**
@@ -330,10 +347,13 @@ typedef enum {
   * @param  None
   * @retval HAL_OK     初始化成功。
   * @retval HAL_ERROR  初始化失败。
-  * @note   调用前需确保 GPIO 时钟已使能。
+  * @note   依次使能 GPIO 时钟、把引脚配置为推挽输出并置为熄灭电平；重复调用会重新配置引脚。
   * @warning 该函数不可在中断中调用。
   */
-HAL_StatusTypeDef BSP_Led_Init(void);
+HAL_StatusTypeDef BSP_Led_Init(void)
+{
+  /* ... */
+}
 
 /**
   * @brief  发送一帧数据。
@@ -342,8 +362,13 @@ HAL_StatusTypeDef BSP_Led_Init(void);
   * @retval HAL_OK     发送成功。
   * @retval HAL_ERROR  参数错误或发送失败。
   * @retval HAL_BUSY   外设忙。
+  * @note   先校验指针与长度，再把数据填入发送缓冲并启动发送；
+  *         上一帧未发完时直接返回 HAL_BUSY，调用方需自行重试。
   */
-HAL_StatusTypeDef APP_Comm_SendFrame(const uint8_t *pData, uint16_t length);
+HAL_StatusTypeDef APP_Comm_SendFrame(const uint8_t *pData, uint16_t length)
+{
+  /* ... */
+}
 ```
 
 ### 4.3 结构体与枚举注释
@@ -595,7 +620,7 @@ chore: 更新静态检查脚本
 AI 生成代码时必须：
 
 1. 先阅读本 `AGENTS.md`。
-2. 遵循 HAL 风格命名、缩进与 Doxygen 注释。
+2. 遵循 HAL 风格命名、缩进与 Doxygen 注释；函数 Doxygen 写在 `.c` 的函数定义处，`.h` 只保留声明。
 3. 不编造不存在的 HAL API。
 4. 不引入未声明的依赖。
 5. 不使用 Magic Number，取值放入 `@defgroup`。
@@ -640,20 +665,7 @@ extern "C" {
 #include <stdint.h>
 #include "main.h"
 
-/**
-  * @brief  初始化 LED 应用模块。
-  * @param  None
-  * @retval HAL_OK     初始化成功。
-  * @retval HAL_ERROR  初始化失败。
-  */
 HAL_StatusTypeDef APP_Led_Init(void);
-
-/**
-  * @brief  翻转 LED 状态。
-  * @param  None
-  * @retval HAL_OK     操作成功。
-  * @retval HAL_ERROR  操作失败。
-  */
 HAL_StatusTypeDef APP_Led_Toggle(void);
 
 #ifdef __cplusplus

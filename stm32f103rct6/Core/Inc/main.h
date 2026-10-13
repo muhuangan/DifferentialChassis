@@ -124,8 +124,6 @@ void Error_Handler(void);
 #define U5_RX_GPIO_Port GPIOD
 #define LASER_TRIG_Pin GPIO_PIN_5
 #define LASER_TRIG_GPIO_Port GPIOB
-#define U1_TX_BUZ_Pin GPIO_PIN_6
-#define U1_TX_BUZ_GPIO_Port GPIOB
 #define U1_RX_Pin GPIO_PIN_7
 #define U1_RX_GPIO_Port GPIOB
 #define CAN_RX_Pin GPIO_PIN_8

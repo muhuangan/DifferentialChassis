@@ -29,7 +29,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "app_chassis_link.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -50,7 +50,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+volatile MID_CANopenStatusTypeDef g_chassisLinkInitStatus = MID_CANOPEN_ERROR; /**< 底盘链路初始化返回值，供调试器观察。 */
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -97,18 +97,27 @@ int main(void)
   MX_DMA_Init();
   MX_ADC1_Init();
   MX_TIM2_Init();
+  /* TIM2 是 HAL 的应用时基（Prescaler 71 + Period 1000 => 72MHz/72/1000 = 1kHz，即 1ms 一拍）。
+     仅 MX_TIM2_Init 不会启动计数，必须显式以中断方式启动，否则 HAL_TIM_PeriodElapsedCallback
+     永不触发，HAL_IncTick 不被调用，uwTick 恒为 0、HAL_GetTick() 永远返回同一个值。
+     所有基于 HAL_GetTick 的超时判断（CANopen 的 SDO 等待、发送邮箱等待、心跳超时）随之全部失效，
+     SDO 一旦等不到应答就会永久阻塞在等待循环里。
+     该中断优先级 6 高于 configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY(5)，不会被 FreeRTOS
+     临界区屏蔽；回调内也不调用任何 FreeRTOS API，因此在任务上下文中安全。 */
+  HAL_TIM_Base_Start_IT(&htim2);
   MX_USART2_UART_Init();
   MX_USART3_UART_Init();
   MX_SPI2_Init();
   MX_UART4_Init();
   MX_UART5_Init();
-  MX_USART1_UART_Init();
   MX_CAN_Init();
   MX_TIM1_Init();
   MX_TIM5_Init();
   MX_TIM8_Init();
   /* USER CODE BEGIN 2 */
-
+  /* 底盘链路初始化必须在此处完成：MX_CAN_Init 已执行，且调度器尚未启动。
+     内部按顺序完成 CANopen 初始化、节点注册、静态二值信号量创建、驱动器使能与串口接收启动。 */
+  g_chassisLinkInitStatus = APP_ChassisLink_Init();
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -183,18 +192,24 @@ void SystemClock_Config(void)
 
 /**
   * @brief  Period elapsed callback in non blocking mode
-  * @note   This function is called  when TIM7 interrupt took place, inside
+  * @note   This function is called when TIM2 interrupt took place, inside
   * HAL_TIM_IRQHandler(). It makes a direct call to HAL_IncTick() to increment
   * a global variable "uwTick" used as application time base.
   * @param  htim : TIM handle
   * @retval None
+  * @note   TIM2 必须已在 main() 中经 HAL_TIM_Base_Start_IT 启动，且此处比较的实例号
+  *         必须与启动的那个定时器一致；两者不一致时 HAL_IncTick 不会被调用，
+  *         HAL_GetTick() 将恒定不变，所有 HAL 超时逻辑随之失效。
   */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   /* USER CODE BEGIN Callback 0 */
 
   /* USER CODE END Callback 0 */
-  if (htim->Instance == TIM7)
+  /* TIM2 是 main() 中显式 HAL_TIM_Base_Start_IT 启动的应用时基；TIM7 由
+     stm32f1xx_hal_timebase_tim.c 的 HAL_InitTick 配置（CubeMX 的 timebase 模板）。
+     两者任一产生更新中断都应推进 uwTick，缺一个都会让 HAL_GetTick() 停止。 */
+  if ((htim->Instance == TIM2) || (htim->Instance == TIM7))
   {
     HAL_IncTick();
   }

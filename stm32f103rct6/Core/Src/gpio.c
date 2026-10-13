@@ -40,6 +40,7 @@
         * EXTI
         * Free pins are configured automatically as Analog (this feature is enabled through
         * the Code Generation settings)
+     PB7   ------> USART1_RX
 */
 void MX_GPIO_Init(void)
 {
@@ -119,8 +120,8 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PB3 PB4 */
-  GPIO_InitStruct.Pin = GPIO_PIN_3|GPIO_PIN_4;
+  /*Configure GPIO pins : PB3 PB4 PB6 */
+  GPIO_InitStruct.Pin = GPIO_PIN_3|GPIO_PIN_4|GPIO_PIN_6;
   GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
@@ -130,6 +131,15 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LASER_TRIG_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : U1_RX_Pin */
+  GPIO_InitStruct.Pin = U1_RX_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(U1_RX_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure peripheral I/O remapping */
+  __HAL_AFIO_REMAP_USART1_ENABLE();
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI4_IRQn, 7, 0);

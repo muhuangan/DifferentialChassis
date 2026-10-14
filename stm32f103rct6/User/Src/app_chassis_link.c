@@ -89,8 +89,10 @@ static const uint8_t s_selfTestNodeIds[CHASSIS_LINK_SELF_TEST_NODE_COUNT] = CHAS
 #endif
 
 static void APP_ChassisLink_EnsureDriveReady(void);
+#if (CHASSIS_LINK_SELF_TEST_ENABLE == 0U)
 static void APP_ChassisLink_DrainAndParse(void);
 static void APP_ChassisLink_OnValidFrame(const MID_ChassisPayloadTypeDef *pPayload);
+#endif
 #if (CHASSIS_LINK_SELF_TEST_ENABLE == 0U)
 static void APP_ChassisLink_Dispatch(void);
 #endif
@@ -304,6 +306,7 @@ static void APP_ChassisLink_SendSpeeds(int32_t leftSpeed, int32_t rightSpeed)
   *         再按 CHASSIS_LINK_SPEED_INVERT_LEFT 与 CHASSIS_LINK_SPEED_INVERT_RIGHT 统一方向；
   *         同时累加合法帧计数并刷新最近接收时刻，供失联判定使用。
   */
+#if (CHASSIS_LINK_SELF_TEST_ENABLE == 0U)
 static void APP_ChassisLink_OnValidFrame(const MID_ChassisPayloadTypeDef *pPayload)
 {
   s_validFrameCount++;
@@ -316,6 +319,7 @@ static void APP_ChassisLink_OnValidFrame(const MID_ChassisPayloadTypeDef *pPaylo
   s_lastValidFrameTick = HAL_GetTick();
   s_hasValidFrame = true;
 }
+#endif
 
 /**
   * @brief  取走环形缓冲区中已到达的数据并逐字节解析成帧。
@@ -325,6 +329,7 @@ static void APP_ChassisLink_OnValidFrame(const MID_ChassisPayloadTypeDef *pPaylo
   *         本轮总取数不超过一环容量，防止数据持续到达时长时间占住任务；
   *         解析结果按合法帧、帧头失配、帧尾失配、范围错误分别累加统计。
   */
+#if (CHASSIS_LINK_SELF_TEST_ENABLE == 0U)
 static void APP_ChassisLink_DrainAndParse(void)
 {
   MID_ChassisPayloadTypeDef payload;
@@ -368,6 +373,7 @@ static void APP_ChassisLink_DrainAndParse(void)
     available = MID_UartRing_GetAvailable();
   }
 }
+#endif
 
 /**
   * @brief  汇总独立节点状态机的实际启动验证结果。
@@ -590,7 +596,9 @@ void APP_ChassisLink_Task(void *argument)
   {
     (void)osSemaphoreAcquire(s_hRxSemaphore, CHASSIS_LINK_POLL_TIMEOUT_MS);
 
+#if (CHASSIS_LINK_SELF_TEST_ENABLE == 0U)
     APP_ChassisLink_DrainAndParse();
+#endif
     MID_CANopen_Process();
     APP_MotorStartup_Process();
     APP_ChassisLink_EnsureDriveReady();

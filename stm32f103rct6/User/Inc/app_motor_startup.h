@@ -29,6 +29,7 @@ extern "C"
 #endif
 
 #include "mid_lisan_ec.h"
+#include "chassis_link_config.h"
 
   /** @defgroup APP_MOTOR_STARTUP_Step 电机启动步骤
    * @{

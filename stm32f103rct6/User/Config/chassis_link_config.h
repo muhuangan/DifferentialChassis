@@ -164,6 +164,24 @@ extern "C" {
   * @}
   */
 
+/**
+  * @defgroup CHASSIS_LINK_Power_Config 电池电压与点阵屏配置
+  * @{
+  */
+#ifndef CHASSIS_LINK_POWER_MONITOR_ENABLE
+#define CHASSIS_LINK_POWER_MONITOR_ENABLE 1U
+#endif
+#define CHASSIS_LINK_BATTERY_ADC_INDEX            3U     /**< 电池通道在 ADC DMA 缓冲中的下标，对应规则组第四通道。 */
+#define CHASSIS_LINK_BATTERY_DIVIDER_PERMILLE     11070  /**< 电池分压比，单位千分之一，11.07 对应 0 至 36 伏输入映射到 0 至 3.3 伏。 */
+#define CHASSIS_LINK_BATTERY_CELL_COUNT           3U     /**< 电池串联串数，用于把总电压拆回单体电压查电量表。 */
+#define CHASSIS_LINK_BATTERY_FULL_MV              12600  /**< 满电电压，单位毫伏，3 串锂电按单体 4.2 伏计。 */
+#define CHASSIS_LINK_BATTERY_LOW_MV               10500  /**< 低压告警电压，单位毫伏，低于该值并持续消抖后置低压标志。 */
+#define CHASSIS_LINK_BATTERY_CRITICAL_MV          9900   /**< 临界截止电压，单位毫伏，低于该值并持续消抖后置临界标志。 */
+#define CHASSIS_LINK_POWER_MONITOR_PERIOD_MS      200U   /**< 电源监视任务周期，单位毫秒，同时决定采样与屏幕刷新速率。 */
+/**
+  * @}
+  */
+
 #if CHASSIS_LINK_SYNC_ROUND_ACTIVE
 #if (CHASSIS_LINK_GEAR_NUMERATOR == 0U) || (CHASSIS_LINK_GEAR_DENOMINATOR == 0U) || \
     (CHASSIS_LINK_SELF_TEST_SPEED_PPS <= 0) || (CHASSIS_LINK_PROFILE_ACCELERATION_PPS2 == 0U) || \

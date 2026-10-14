@@ -110,6 +110,10 @@ int main(void)
   /* USER CODE BEGIN 2 */
   /* 底盘链路初始化, 内部按顺序完成 CANopen 初始化、节点注册、静态二值信号量创建、驱动器使能与串口接收启动。 */
   g_chassisLinkInitStatus = APP_ChassisLink_Init();
+#if (CHASSIS_LINK_POWER_MONITOR_ENABLE == 1U)
+  /* 电源监视初始化, 内部完成 ADC 校准启动、DMA 循环采样与点阵屏初始化。 */
+  APP_PowerMonitor_Init();
+#endif
   /* USER CODE END 2 */
 
   /* Init scheduler */

@@ -26,6 +26,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "app_chassis_link.h"
+#include "chassis_link_config.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -58,7 +59,7 @@ const osThreadAttr_t TaskLow_attributes = {
 osThreadId_t TaskHighHandle;
 const osThreadAttr_t TaskHigh_attributes = {
   .name = "TaskHigh",
-  .stack_size = 128 * 4,
+  .stack_size = CHASSIS_LINK_TASK_STACK_BYTES,
   .priority = (osPriority_t) osPriorityHigh,
 };
 /* Definitions for TaskMid */

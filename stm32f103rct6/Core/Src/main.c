@@ -97,7 +97,7 @@ int main(void)
   MX_DMA_Init();
   MX_ADC1_Init();
   MX_TIM2_Init();
-  HAL_TIM_Base_Start_IT(&htim2);
+  /* HAL 毫秒时基由 HAL_InitTick 启动的 TIM7 独立提供，应用定时器 TIM2 不再兼作时基。 */
   MX_USART2_UART_Init();
   MX_USART3_UART_Init();
   MX_SPI2_Init();
@@ -183,25 +183,19 @@ void SystemClock_Config(void)
 /* USER CODE END 4 */
 
 /**
-  * @brief  Period elapsed callback in non blocking mode
-  * @note   This function is called when TIM2 interrupt took place, inside
-  * HAL_TIM_IRQHandler(). It makes a direct call to HAL_IncTick() to increment
-  * a global variable "uwTick" used as application time base.
-  * @param  htim : TIM handle
+  * @brief  在 TIM7 周期中断中维护 HAL 毫秒时基。
+  * @param  htim  定时器句柄。
   * @retval None
-  * @note   TIM2 必须已在 main() 中经 HAL_TIM_Base_Start_IT 启动，且此处比较的实例号
-  *         必须与启动的那个定时器一致；两者不一致时 HAL_IncTick 不会被调用，
-  *         HAL_GetTick() 将恒定不变，所有 HAL 超时逻辑随之失效。
+  * @note   TIM7 由 stm32f1xx_hal_timebase_tim.c 的 HAL_InitTick 配置并启动，1 毫秒一拍。
+  *         此回调只允许 TIM7 推进 HAL 毫秒时基；若让其它定时器也调用 HAL_IncTick，
+  *         uwTick 会按多个定时器的频率累加，所有以毫秒为单位的超时都会成倍缩短。
   */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   /* USER CODE BEGIN Callback 0 */
 
   /* USER CODE END Callback 0 */
-  /* TIM2 是 main() 中显式 HAL_TIM_Base_Start_IT 启动的应用时基；TIM7 由
-     stm32f1xx_hal_timebase_tim.c 的 HAL_InitTick 配置（CubeMX 的 timebase 模板）。
-     两者任一产生更新中断都应推进 uwTick，缺一个都会让 HAL_GetTick() 停止。 */
-  if ((htim->Instance == TIM2) || (htim->Instance == TIM7))
+  if (htim->Instance == TIM7)
   {
     HAL_IncTick();
   }

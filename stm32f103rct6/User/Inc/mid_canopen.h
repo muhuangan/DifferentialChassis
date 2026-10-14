@@ -42,6 +42,7 @@ extern "C" {
 #define MID_CANOPEN_NODE_ID_MIN              1U      /**< 有效节点地址下限。 */
 #define MID_CANOPEN_NODE_ID_MAX              127U    /**< 有效节点地址上限。 */
 #define MID_CANOPEN_FRAME_DATA_SIZE_BYTES    8U      /**< 标准帧数据段长度，单位字节。 */
+#define MID_CANOPEN_HEARTBEAT_DATA_SIZE_BYTES 1U     /**< 心跳报文数据段长度，单位字节。 */
 #define MID_CANOPEN_PDO_COUNT                4U      /**< 驱动器支持的 PDO 组数。 */
 #define MID_CANOPEN_PDO_MAP_ITEM_MAX         8U      /**< 单组 PDO 最多映射的对象个数。 */
 #define MID_CANOPEN_SDO_EXPEDITED_DATA_SIZE_BYTES 4U /**< 加速 SDO 可传输的最大字节数。 */
@@ -75,8 +76,9 @@ extern "C" {
   * @defgroup MID_CANOPEN_SDO_Command CANopen SDO Command Specifier
   * @{
   */
+#define MID_CANOPEN_SDO_EXPEDITED_FLAGS      0x03U   /**< 加速传输与长度有效标志，e 为 bit1、s 为 bit0。 */
 #define MID_CANOPEN_SDO_CCS_MASK             0xE0U   /**< 命令代码掩码。 */
-#define MID_CANOPEN_SDO_CCS_DOWNLOAD_EXPEDITED 0x20U /**< 加速下载请求。 */
+#define MID_CANOPEN_SDO_CCS_DOWNLOAD_EXPEDITED 0x23U /**< 四字节加速下载请求，含 e=1、s=1；1、2、3 字节在其上按长度域叠加。 */
 #define MID_CANOPEN_SDO_CCS_UPLOAD_REQUEST   0x40U   /**< 加速上传请求。 */
 #define MID_CANOPEN_SDO_SCS_DOWNLOAD_ACK     0x60U   /**< 下载应答。 */
 #define MID_CANOPEN_SDO_SCS_UPLOAD_RESPONSE  0x40U   /**< 上传应答。 */
@@ -208,6 +210,10 @@ typedef struct
   bool                        hasSdoResponse;        /**< SDO 应答到达标志。 */
   uint32_t                    sdoResponseTick;       /**< SDO 应答到达时间戳，单位毫秒。 */
   uint8_t                     sdoResponse[8];        /**< SDO 应答原始数据。 */
+  volatile bool               isSdoWaiting;          /**< SDO 事务进行中标志，中断侧只接收当前事务的应答帧。 */
+  volatile uint16_t           sdoExpectedIndex;      /**< 当前事务应答期望的对象索引。 */
+  volatile uint8_t            sdoExpectedSubIndex;   /**< 当前事务应答期望的子索引。 */
+  volatile uint8_t            sdoExpectedCommand;    /**< 当前事务应答期望上传或下载命令字。 */
   bool                        hasTpdo[MID_CANOPEN_PDO_COUNT];   /**< 各 TPDO 数据到达标志，索引 0 对应 TPDO1。 */
   uint8_t                     tpdoLength[MID_CANOPEN_PDO_COUNT]; /**< 各 TPDO 数据长度，单位字节。 */
   uint8_t                     tpdoBuffer[MID_CANOPEN_PDO_COUNT][MID_CANOPEN_FRAME_DATA_SIZE_BYTES]; /**< 各 TPDO 数据缓存。 */

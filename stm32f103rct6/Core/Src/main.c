@@ -97,13 +97,6 @@ int main(void)
   MX_DMA_Init();
   MX_ADC1_Init();
   MX_TIM2_Init();
-  /* TIM2 是 HAL 的应用时基（Prescaler 71 + Period 1000 => 72MHz/72/1000 = 1kHz，即 1ms 一拍）。
-     仅 MX_TIM2_Init 不会启动计数，必须显式以中断方式启动，否则 HAL_TIM_PeriodElapsedCallback
-     永不触发，HAL_IncTick 不被调用，uwTick 恒为 0、HAL_GetTick() 永远返回同一个值。
-     所有基于 HAL_GetTick 的超时判断（CANopen 的 SDO 等待、发送邮箱等待、心跳超时）随之全部失效，
-     SDO 一旦等不到应答就会永久阻塞在等待循环里。
-     该中断优先级 6 高于 configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY(5)，不会被 FreeRTOS
-     临界区屏蔽；回调内也不调用任何 FreeRTOS API，因此在任务上下文中安全。 */
   HAL_TIM_Base_Start_IT(&htim2);
   MX_USART2_UART_Init();
   MX_USART3_UART_Init();
@@ -115,8 +108,7 @@ int main(void)
   MX_TIM5_Init();
   MX_TIM8_Init();
   /* USER CODE BEGIN 2 */
-  /* 底盘链路初始化必须在此处完成：MX_CAN_Init 已执行，且调度器尚未启动。
-     内部按顺序完成 CANopen 初始化、节点注册、静态二值信号量创建、驱动器使能与串口接收启动。 */
+  /* 底盘链路初始化, 内部按顺序完成 CANopen 初始化、节点注册、静态二值信号量创建、驱动器使能与串口接收启动。 */
   g_chassisLinkInitStatus = APP_ChassisLink_Init();
   /* USER CODE END 2 */
 

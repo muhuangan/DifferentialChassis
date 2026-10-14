@@ -38,13 +38,22 @@ extern "C" {
 #define MID_CANOPEN_COB_ID_MASK              0x7FFU  /**< 11 位标准帧标识符掩码。 */
 #define MID_CANOPEN_COB_ID_FUNCTION_MASK     0x780U  /**< 标识符中的功能码掩码。 */
 #define MID_CANOPEN_COB_ID_NODE_MASK         0x07FU  /**< 标识符中的节点地址掩码。 */
+#if (MID_CANOPEN_ENABLE_PDO == 1)
 #define MID_CANOPEN_COB_ID_INVALID_FLAG      0x80000000U /**< PDO COB-ID 无效标志，最高位为 1。 */
+#endif
+
 #define MID_CANOPEN_NODE_ID_MIN              1U      /**< 有效节点地址下限。 */
 #define MID_CANOPEN_NODE_ID_MAX              127U    /**< 有效节点地址上限。 */
 #define MID_CANOPEN_FRAME_DATA_SIZE_BYTES    8U      /**< 标准帧数据段长度，单位字节。 */
 #define MID_CANOPEN_HEARTBEAT_DATA_SIZE_BYTES 1U     /**< 心跳报文数据段长度，单位字节。 */
+#if (MID_CANOPEN_ENABLE_PDO == 1)
 #define MID_CANOPEN_PDO_COUNT                4U      /**< 驱动器支持的 PDO 组数。 */
+#endif
+
+#if (MID_CANOPEN_ENABLE_PDO == 1)
 #define MID_CANOPEN_PDO_MAP_ITEM_MAX         8U      /**< 单组 PDO 最多映射的对象个数。 */
+#endif
+
 #define MID_CANOPEN_SDO_EXPEDITED_DATA_SIZE_BYTES 4U /**< 加速 SDO 可传输的最大字节数。 */
 /**
   * @}
@@ -57,6 +66,7 @@ extern "C" {
 #define MID_CANOPEN_COB_NMT                  0x000U  /**< 网络管理报文功能码。 */
 #define MID_CANOPEN_COB_SYNC                 0x080U  /**< 同步对象 COB-ID。 */
 #define MID_CANOPEN_COB_EMCY_BASE            0x080U  /**< 紧急报文功能码。 */
+#if (MID_CANOPEN_ENABLE_PDO == 1)
 #define MID_CANOPEN_COB_TPDO1_BASE           0x180U  /**< TPDO1 功能码。 */
 #define MID_CANOPEN_COB_RPDO1_BASE           0x200U  /**< RPDO1 功能码。 */
 #define MID_CANOPEN_COB_TPDO2_BASE           0x280U  /**< TPDO2 功能码。 */
@@ -65,6 +75,8 @@ extern "C" {
 #define MID_CANOPEN_COB_RPDO3_BASE           0x400U  /**< RPDO3 功能码。 */
 #define MID_CANOPEN_COB_TPDO4_BASE           0x480U  /**< TPDO4 功能码。 */
 #define MID_CANOPEN_COB_RPDO4_BASE           0x500U  /**< RPDO4 功能码。 */
+#endif
+
 #define MID_CANOPEN_COB_SDO_REQUEST          0x600U  /**< 主站发送 SDO 功能码。 */
 #define MID_CANOPEN_COB_SDO_RESPONSE         0x580U  /**< 从站应答 SDO 功能码。 */
 #define MID_CANOPEN_COB_HEARTBEAT_BASE       0x700U  /**< 心跳报文功能码。 */
@@ -89,6 +101,7 @@ extern "C" {
   * @}
   */
 
+#if (MID_CANOPEN_ENABLE_PDO == 1)
 /**
   * @defgroup MID_CANOPEN_PDO_Transmission_Type CANopen PDO Transmission Type
   * @{
@@ -100,6 +113,8 @@ extern "C" {
 /**
   * @}
   */
+#endif
+
 
 /**
   * @defgroup MID_CANOPEN_SDO_Abort_Code CANopen SDO Abort Code
@@ -167,6 +182,7 @@ typedef enum
   * @}
   */
 
+#if (MID_CANOPEN_ENABLE_PDO == 1)
 /**
   * @defgroup MID_CANOPEN_PDO_Index CANopen PDO Index
   * @{
@@ -191,6 +207,8 @@ typedef struct
   uint8_t  SubIndex;  /**< 对象字典子索引。 */
   uint8_t  BitLength; /**< 对象长度，取 MID_CANOPEN_OD_PDO_SIZE_xxx。 */
 } MID_CANopenPdoMapTypeDef;
+#endif
+
 
 /**
   * @brief  从站节点运行信息。
@@ -214,10 +232,13 @@ typedef struct
   volatile uint16_t           sdoExpectedIndex;      /**< 当前事务应答期望的对象索引。 */
   volatile uint8_t            sdoExpectedSubIndex;   /**< 当前事务应答期望的子索引。 */
   volatile uint8_t            sdoExpectedCommand;    /**< 当前事务应答期望上传或下载命令字。 */
-  bool                        hasTpdo[MID_CANOPEN_PDO_COUNT];   /**< 各 TPDO 数据到达标志，索引 0 对应 TPDO1。 */
+  #if (MID_CANOPEN_ENABLE_PDO == 1)
+bool                        hasTpdo[MID_CANOPEN_PDO_COUNT];   /**< 各 TPDO 数据到达标志，索引 0 对应 TPDO1。 */
   uint8_t                     tpdoLength[MID_CANOPEN_PDO_COUNT]; /**< 各 TPDO 数据长度，单位字节。 */
   uint8_t                     tpdoBuffer[MID_CANOPEN_PDO_COUNT][MID_CANOPEN_FRAME_DATA_SIZE_BYTES]; /**< 各 TPDO 数据缓存。 */
   uint32_t                    tpdoTick[MID_CANOPEN_PDO_COUNT];   /**< 各 TPDO 到达时间戳，单位毫秒。 */
+#endif
+
 } MID_CANopenNodeTypeDef;
 
 /**
@@ -248,13 +269,9 @@ void MID_CANopen_Process(void);
 
 MID_CANopenStatusTypeDef MID_CANopen_Nmt_Control(uint8_t nodeId, MID_CANopenNmtCommandTypeDef command);
 
+#if (MID_CANOPEN_ENABLE_PDO == 1)
 MID_CANopenStatusTypeDef MID_CANopen_Sync_Send(void);
-
-MID_CANopenStatusTypeDef MID_CANopen_Sdo_Write(uint8_t nodeId, uint16_t index, uint8_t subIndex,
-                                               const void *pData, uint8_t dataSize);
-
-MID_CANopenStatusTypeDef MID_CANopen_Sdo_Read(uint8_t nodeId, uint16_t index, uint8_t subIndex,
-                                              void *pData, uint8_t dataSize);
+#endif
 
 MID_CANopenStatusTypeDef MID_CANopen_Sdo_WriteU8(uint8_t nodeId, uint16_t index, uint8_t subIndex, uint8_t value);
 MID_CANopenStatusTypeDef MID_CANopen_Sdo_WriteU16(uint8_t nodeId, uint16_t index, uint8_t subIndex, uint16_t value);
@@ -263,32 +280,43 @@ MID_CANopenStatusTypeDef MID_CANopen_Sdo_WriteI8(uint8_t nodeId, uint16_t index,
 MID_CANopenStatusTypeDef MID_CANopen_Sdo_WriteI16(uint8_t nodeId, uint16_t index, uint8_t subIndex, int16_t value);
 MID_CANopenStatusTypeDef MID_CANopen_Sdo_WriteI32(uint8_t nodeId, uint16_t index, uint8_t subIndex, int32_t value);
 
-MID_CANopenStatusTypeDef MID_CANopen_Sdo_ReadU8(uint8_t nodeId, uint16_t index, uint8_t subIndex, uint8_t *pValue);
 MID_CANopenStatusTypeDef MID_CANopen_Sdo_ReadU16(uint8_t nodeId, uint16_t index, uint8_t subIndex, uint16_t *pValue);
 MID_CANopenStatusTypeDef MID_CANopen_Sdo_ReadU32(uint8_t nodeId, uint16_t index, uint8_t subIndex, uint32_t *pValue);
 MID_CANopenStatusTypeDef MID_CANopen_Sdo_ReadI8(uint8_t nodeId, uint16_t index, uint8_t subIndex, int8_t *pValue);
 MID_CANopenStatusTypeDef MID_CANopen_Sdo_ReadI16(uint8_t nodeId, uint16_t index, uint8_t subIndex, int16_t *pValue);
 MID_CANopenStatusTypeDef MID_CANopen_Sdo_ReadI32(uint8_t nodeId, uint16_t index, uint8_t subIndex, int32_t *pValue);
 
+#if (MID_CANOPEN_ENABLE_PDO == 1)
 uint32_t MID_CANopen_GetDefaultCobId(uint8_t nodeId, MID_CANopenPdoIndexTypeDef pdoIndex, bool isTpdo);
+#endif
 
+#if (MID_CANOPEN_ENABLE_PDO == 1)
 MID_CANopenStatusTypeDef MID_CANopen_Pdo_ConfigRx(uint8_t nodeId, MID_CANopenPdoIndexTypeDef pdoIndex,
                                                   const MID_CANopenPdoMapTypeDef *pMap, uint8_t mapCount,
                                                   uint32_t cobId, uint8_t transmissionType, uint16_t eventTimerMs);
+#endif
 
+#if (MID_CANOPEN_ENABLE_PDO == 1)
 MID_CANopenStatusTypeDef MID_CANopen_Pdo_ConfigTx(uint8_t nodeId, MID_CANopenPdoIndexTypeDef pdoIndex,
                                                   const MID_CANopenPdoMapTypeDef *pMap, uint8_t mapCount,
                                                   uint32_t cobId, uint8_t transmissionType, uint16_t eventTimerMs);
+#endif
 
+#if (MID_CANOPEN_ENABLE_PDO == 1)
 MID_CANopenStatusTypeDef MID_CANopen_Rpdo_Send(uint8_t nodeId, MID_CANopenPdoIndexTypeDef pdoIndex,
                                                const uint8_t *pData, uint8_t length);
+#endif
 
+#if (MID_CANOPEN_ENABLE_PDO == 1)
 bool MID_CANopen_GetTpdo(uint8_t nodeId, MID_CANopenPdoIndexTypeDef pdoIndex, uint8_t *pData, uint8_t *pLength);
+#endif
 
 const char *MID_CANopen_SdoAbortToString(uint32_t abortCode);
 
+#if (MID_CANOPEN_ENABLE_PDO == 1)
 void MID_CANopen_TpdoReceivedCallback(uint8_t nodeId, MID_CANopenPdoIndexTypeDef pdoIndex,
                                       const uint8_t *pData, uint8_t length);
+#endif
 
 #ifdef __cplusplus
 }

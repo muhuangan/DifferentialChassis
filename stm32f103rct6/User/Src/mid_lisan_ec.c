@@ -34,6 +34,10 @@
 
 static bool MID_LisanEc_IsModeSupported(MID_LisanEcModeTypeDef mode);
 
+/* 状态字解析只在本文件内使用，前置声明供 ReadStatusWord 调用。 */
+static void MID_LisanEc_ParseStatusWord(uint16_t statusWord, MID_LisanEcStatusWordTypeDef *pStatus);
+
+#if (MID_LISAN_EC_ENABLE_STATE_CMDS == 1)
 /**
   * @brief  使能驱动器。
   * @param  nodeId  节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
@@ -61,6 +65,8 @@ MID_CANopenStatusTypeDef MID_LisanEc_EnableDrive(uint8_t nodeId)
 
   return MID_LisanEc_WriteControlWord(nodeId, MID_LISAN_EC_CONTROL_WORD_ENABLE_OPERATION);
 }
+#endif
+
 
 /**
   * @brief  写入控制字 0x6040。
@@ -76,6 +82,7 @@ MID_CANopenStatusTypeDef MID_LisanEc_WriteControlWord(uint8_t nodeId, uint16_t c
   return MID_CANopen_Sdo_WriteU16(nodeId, MID_CANOPEN_OD_CONTROL_WORD, MID_CANOPEN_OD_SUB_INDEX_0, controlWord);
 }
 
+#if (MID_LISAN_EC_ENABLE_STATE_CMDS == 1)
 /**
   * @brief  读取控制字 0x6040。
   * @param  nodeId        节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
@@ -96,7 +103,10 @@ MID_CANopenStatusTypeDef MID_LisanEc_ReadControlWord(uint8_t nodeId, uint16_t *p
 
   return MID_CANopen_Sdo_ReadU16(nodeId, MID_CANOPEN_OD_CONTROL_WORD, MID_CANOPEN_OD_SUB_INDEX_0, pControlWord);
 }
+#endif
 
+
+#if (MID_LISAN_EC_ENABLE_STATE_CMDS == 1)
 /**
   * @brief  电机脱机，取消锁轴状态。
   * @param  nodeId  节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
@@ -109,7 +119,10 @@ MID_CANopenStatusTypeDef MID_LisanEc_SetMotorFree(uint8_t nodeId)
 {
   return MID_LisanEc_WriteControlWord(nodeId, MID_LISAN_EC_CONTROL_WORD_MOTOR_FREE);
 }
+#endif
 
+
+#if (MID_LISAN_EC_ENABLE_STATE_CMDS == 1)
 /**
   * @brief  电机锁机，锁定在当前位置。
   * @param  nodeId  节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
@@ -122,7 +135,10 @@ MID_CANopenStatusTypeDef MID_LisanEc_SetMotorLock(uint8_t nodeId)
 {
   return MID_LisanEc_WriteControlWord(nodeId, MID_LISAN_EC_CONTROL_WORD_MOTOR_LOCK);
 }
+#endif
 
+
+#if (MID_LISAN_EC_ENABLE_STATE_CMDS == 1)
 /**
   * @brief  启动快速停机。
   * @param  nodeId  节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
@@ -138,7 +154,10 @@ MID_CANopenStatusTypeDef MID_LisanEc_QuickStop(uint8_t nodeId)
 {
   return MID_LisanEc_WriteControlWord(nodeId, MID_LISAN_EC_CONTROL_WORD_QUICK_STOP);
 }
+#endif
 
+
+#if (MID_LISAN_EC_ENABLE_STATE_CMDS == 1)
 /**
   * @brief  减速停止。
   * @param  nodeId  节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
@@ -157,7 +176,10 @@ MID_CANopenStatusTypeDef MID_LisanEc_Halt(uint8_t nodeId)
 {
   return MID_LisanEc_WriteControlWord(nodeId, MID_LISAN_EC_CONTROL_WORD_HALT);
 }
+#endif
 
+
+#if (MID_LISAN_EC_ENABLE_STATE_CMDS == 1)
 /**
   * @brief  复位可复位故障，并把控制字 bit7 清零。
   * @param  nodeId  节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
@@ -185,6 +207,8 @@ MID_CANopenStatusTypeDef MID_LisanEc_FaultReset(uint8_t nodeId)
 
   return MID_LisanEc_WriteControlWord(nodeId, MID_LISAN_EC_CONTROL_WORD_MOTOR_FREE);
 }
+#endif
+
 
 /**
   * @brief  设置工作模式 0x6060。
@@ -239,6 +263,7 @@ MID_CANopenStatusTypeDef MID_LisanEc_ReadOperationMode(uint8_t nodeId, MID_Lisan
   return MID_CANOPEN_OK;
 }
 
+#if (MID_LISAN_EC_ENABLE_DRIVE_PARAM == 1)
 /**
   * @brief  设置电机细分 0x2001。
   * @param  nodeId         节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
@@ -252,7 +277,10 @@ MID_CANopenStatusTypeDef MID_LisanEc_SetMicroStep(uint8_t nodeId, uint32_t pulse
 {
   return MID_CANopen_Sdo_WriteU32(nodeId, MID_CANOPEN_OD_MICRO_STEP, MID_CANOPEN_OD_SUB_INDEX_0, pulsePerRound);
 }
+#endif
 
+
+#if (MID_LISAN_EC_ENABLE_DRIVE_PARAM == 1)
 /**
   * @brief  设置驱动器峰值电流 0x2000。
   * @param  nodeId     节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
@@ -266,7 +294,10 @@ MID_CANopenStatusTypeDef MID_LisanEc_SetPeakCurrent(uint8_t nodeId, uint16_t cur
 {
   return MID_CANopen_Sdo_WriteU16(nodeId, MID_CANOPEN_OD_PEAK_CURRENT, MID_CANOPEN_OD_SUB_INDEX_0, currentMa);
 }
+#endif
 
+
+#if (MID_LISAN_EC_ENABLE_DRIVE_PARAM == 1)
 /**
   * @brief  设置平滑时间 0x2002。
   * @param  nodeId        节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
@@ -280,7 +311,10 @@ MID_CANopenStatusTypeDef MID_LisanEc_SetSmoothTime(uint8_t nodeId, uint16_t smoo
 {
   return MID_CANopen_Sdo_WriteU16(nodeId, MID_CANOPEN_OD_SMOOTH_TIME, MID_CANOPEN_OD_SUB_INDEX_0, smoothTimeMs);
 }
+#endif
 
+
+#if (MID_LISAN_EC_ENABLE_DRIVE_PARAM == 1)
 /**
   * @brief  设置最小电流参数 0x2003。
   * @param  nodeId          节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
@@ -296,7 +330,10 @@ MID_CANopenStatusTypeDef MID_LisanEc_SetMinimumCurrent(uint8_t nodeId, uint16_t 
   return MID_CANopen_Sdo_WriteU16(nodeId, MID_CANOPEN_OD_MINIMUM_CURRENT, MID_CANOPEN_OD_SUB_INDEX_0,
                                   minimumCurrent);
 }
+#endif
 
+
+#if (MID_LISAN_EC_ENABLE_DRIVE_PARAM == 1)
 /**
   * @brief  设置电机运行方向 0x2051。
   * @param  nodeId     节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
@@ -310,6 +347,8 @@ MID_CANopenStatusTypeDef MID_LisanEc_SetMotorDirection(uint8_t nodeId, uint16_t 
 {
   return MID_CANopen_Sdo_WriteU16(nodeId, MID_CANOPEN_OD_MOTOR_DIRECTION, MID_CANOPEN_OD_SUB_INDEX_0, direction);
 }
+#endif
+
 
 /**
   * @brief  设置梯形加速度 0x6083。
@@ -341,6 +380,7 @@ MID_CANopenStatusTypeDef MID_LisanEc_SetProfileDeceleration(uint8_t nodeId, uint
                                   deceleration);
 }
 
+#if (MID_LISAN_EC_ENABLE_DRIVE_PARAM == 1)
 /**
   * @brief  设置位置模式梯形速度 0x6081。
   * @param  nodeId    节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
@@ -354,6 +394,8 @@ MID_CANopenStatusTypeDef MID_LisanEc_SetProfileVelocity(uint8_t nodeId, uint32_t
 {
   return MID_CANopen_Sdo_WriteU32(nodeId, MID_CANOPEN_OD_PROFILE_VELOCITY, MID_CANOPEN_OD_SUB_INDEX_0, velocity);
 }
+#endif
+
 
 /**
   * @brief  设置目标位置 0x607A。
@@ -383,6 +425,7 @@ MID_CANopenStatusTypeDef MID_LisanEc_SetTargetVelocity(uint8_t nodeId, int32_t v
   return MID_CANopen_Sdo_WriteI32(nodeId, MID_CANOPEN_OD_TARGET_VELOCITY, MID_CANOPEN_OD_SUB_INDEX_0, velocity);
 }
 
+#if (MID_LISAN_EC_ENABLE_TORQUE_MODE == 1)
 /**
   * @brief  设置目标力矩 0x6071。
   * @param  nodeId  节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
@@ -402,7 +445,10 @@ MID_CANopenStatusTypeDef MID_LisanEc_SetTargetTorque(uint8_t nodeId, int16_t tor
 
   return MID_CANopen_Sdo_WriteI16(nodeId, MID_CANOPEN_OD_TARGET_TORQUE, MID_CANOPEN_OD_SUB_INDEX_0, torque);
 }
+#endif
 
+
+#if (MID_LISAN_EC_ENABLE_TORQUE_MODE == 1)
 /**
   * @brief  设置最大力矩 0x6072。
   * @param  nodeId     节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
@@ -423,7 +469,10 @@ MID_CANopenStatusTypeDef MID_LisanEc_SetMaxTorque(uint8_t nodeId, uint16_t maxTo
 
   return MID_CANopen_Sdo_WriteU16(nodeId, MID_CANOPEN_OD_MAX_TORQUE, MID_CANOPEN_OD_SUB_INDEX_0, maxTorque);
 }
+#endif
 
+
+#if (MID_LISAN_EC_ENABLE_TORQUE_MODE == 1)
 /**
   * @brief  配置力矩模式参数 0x2158。
   * @param  nodeId       节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
@@ -466,7 +515,10 @@ MID_CANopenStatusTypeDef MID_LisanEc_ConfigureTorqueMode(uint8_t nodeId, MID_Lis
   return MID_CANopen_Sdo_WriteU16(nodeId, MID_CANOPEN_OD_TORQUE_PARAMETER, MID_CANOPEN_OD_TORQUE_SUB_MAX_SPEED,
                                   maxSpeed);
 }
+#endif
 
+
+#if (MID_LISAN_EC_ENABLE_HOMING == 1)
 /**
   * @brief  配置回原点参数。
   * @param  nodeId        节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
@@ -508,7 +560,10 @@ MID_CANopenStatusTypeDef MID_LisanEc_ConfigureHoming(uint8_t nodeId, uint8_t met
   return MID_CANopen_Sdo_WriteU32(nodeId, MID_CANOPEN_OD_HOMING_ACCELERATION, MID_CANOPEN_OD_SUB_INDEX_0,
                                   acceleration);
 }
+#endif
 
+
+#if (MID_LISAN_EC_ENABLE_POSITION_MOVE == 1)
 /**
   * @brief  以绝对位置方式启动轮廓位置模式运动。
   * @param  nodeId       节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
@@ -545,7 +600,10 @@ MID_CANopenStatusTypeDef MID_LisanEc_MoveAbsolute(uint8_t nodeId, int32_t positi
 
   return MID_LisanEc_WriteControlWord(nodeId, controlWord);
 }
+#endif
 
+
+#if (MID_LISAN_EC_ENABLE_POSITION_MOVE == 1)
 /**
   * @brief  以相对位置方式启动轮廓位置模式运动。
   * @param  nodeId         节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
@@ -582,7 +640,10 @@ MID_CANopenStatusTypeDef MID_LisanEc_MoveRelative(uint8_t nodeId, int32_t deltaP
 
   return MID_LisanEc_WriteControlWord(nodeId, controlWord);
 }
+#endif
 
+
+#if (MID_LISAN_EC_ENABLE_POSITION_MOVE == 1)
 /**
   * @brief  清除新的位置指令。
   * @param  nodeId  节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
@@ -595,7 +656,10 @@ MID_CANopenStatusTypeDef MID_LisanEc_ClearSetpoint(uint8_t nodeId)
 {
   return MID_LisanEc_WriteControlWord(nodeId, MID_LISAN_EC_CONTROL_WORD_ENABLE_OPERATION);
 }
+#endif
 
+
+#if (MID_LISAN_EC_ENABLE_HOMING == 1)
 /**
   * @brief  启动回原点运动。
   * @param  nodeId  节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
@@ -623,6 +687,8 @@ MID_CANopenStatusTypeDef MID_LisanEc_StartHoming(uint8_t nodeId)
   return MID_LisanEc_WriteControlWord(nodeId, MID_LISAN_EC_CONTROL_WORD_ENABLE_OPERATION |
                                                 MID_LISAN_EC_CONTROL_WORD_NEW_SETPOINT);
 }
+#endif
+
 
 /**
   * @brief  读取并解析状态字 0x6041。
@@ -697,6 +763,7 @@ MID_CANopenStatusTypeDef MID_LisanEc_ReadVelocity(uint8_t nodeId, int32_t *pVelo
                                  pVelocity);
 }
 
+#if (MID_LISAN_EC_ENABLE_MAINTENANCE == 1)
 /**
   * @brief  读取实时电流 0x6078。
   * @param  nodeId    节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
@@ -716,6 +783,8 @@ MID_CANopenStatusTypeDef MID_LisanEc_ReadCurrent(uint8_t nodeId, int16_t *pCurre
 
   return MID_CANopen_Sdo_ReadI16(nodeId, MID_CANOPEN_OD_CURRENT_ACTUAL_VALUE, MID_CANOPEN_OD_SUB_INDEX_0, pCurrent);
 }
+#endif
+
 
 /**
   * @brief  读取驱动器错误代码 0x603F。
@@ -737,6 +806,7 @@ MID_CANopenStatusTypeDef MID_LisanEc_ReadErrorCode(uint8_t nodeId, uint16_t *pEr
   return MID_CANopen_Sdo_ReadU16(nodeId, MID_CANOPEN_OD_ERROR_CODE, MID_CANOPEN_OD_SUB_INDEX_0, pErrorCode);
 }
 
+#if (MID_LISAN_EC_ENABLE_MAINTENANCE == 1)
 /**
   * @brief  读取输入口与电机状态 0x60FD。
   * @param  nodeId   节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
@@ -756,7 +826,10 @@ MID_CANopenStatusTypeDef MID_LisanEc_ReadDigitalInputs(uint8_t nodeId, uint32_t 
 
   return MID_CANopen_Sdo_ReadU32(nodeId, MID_CANOPEN_OD_DIGITAL_INPUTS, MID_CANOPEN_OD_SUB_INDEX_0, pInputs);
 }
+#endif
 
+
+#if (MID_LISAN_EC_ENABLE_MAINTENANCE == 1)
 /**
   * @brief  设置从站地址 0x2150 与地址来源 0x2151。
   * @param  nodeId        节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
@@ -791,7 +864,10 @@ MID_CANopenStatusTypeDef MID_LisanEc_SetNodeAddress(uint8_t nodeId, uint16_t new
                                   (isFromObject == true) ? MID_LISAN_EC_ADDRESS_SOURCE_OBJECT_ONLY
                                                          : MID_LISAN_EC_ADDRESS_SOURCE_DIAL_PLUS_OBJECT);
 }
+#endif
 
+
+#if (MID_LISAN_EC_ENABLE_MAINTENANCE == 1)
 /**
   * @brief  保存全部参数 0x1010 子索引 1。
   * @param  nodeId  节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
@@ -805,7 +881,10 @@ MID_CANopenStatusTypeDef MID_LisanEc_StoreParameters(uint8_t nodeId)
   return MID_CANopen_Sdo_WriteU32(nodeId, MID_CANOPEN_OD_STORE_PARAMETERS, MID_CANOPEN_OD_STORE_SUB_ALL,
                                   MID_CANOPEN_OD_STORE_SIGNATURE);
 }
+#endif
 
+
+#if (MID_LISAN_EC_ENABLE_MAINTENANCE == 1)
 /**
   * @brief  恢复全部出厂参数 0x1011 子索引 1。
   * @param  nodeId  节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
@@ -819,6 +898,8 @@ MID_CANopenStatusTypeDef MID_LisanEc_RestoreDefault(uint8_t nodeId)
   return MID_CANopen_Sdo_WriteU32(nodeId, MID_CANOPEN_OD_RESTORE_DEFAULT, MID_CANOPEN_OD_RESTORE_SUB_ALL,
                                   MID_CANOPEN_OD_RESTORE_SIGNATURE);
 }
+#endif
+
 
 /**
   * @brief  解析状态字得到 CiA402 驱动状态。
@@ -882,7 +963,7 @@ MID_LisanEcStateTypeDef MID_LisanEc_ParseState(uint16_t statusWord)
   * @retval None
   * @note   按位展开各标志写入结构体：故障、使能、目标到达等为高有效，Quick Stop 为低有效，对应位为 0 时才置真。
   */
-void MID_LisanEc_ParseStatusWord(uint16_t statusWord, MID_LisanEcStatusWordTypeDef *pStatus)
+static void MID_LisanEc_ParseStatusWord(uint16_t statusWord, MID_LisanEcStatusWordTypeDef *pStatus)
 {
   if (pStatus == NULL)
   {
@@ -904,6 +985,7 @@ void MID_LisanEc_ParseStatusWord(uint16_t statusWord, MID_LisanEcStatusWordTypeD
   pStatus->isHomingAttained = ((statusWord & MID_LISAN_EC_STATUS_WORD_HOMING_ATTAINED) != 0U) ? true : false;
 }
 
+#if (MID_LISAN_EC_ENABLE_MAINTENANCE == 1)
 /**
   * @brief  将错误代码转换为可读文本。
   * @param  errorCode  错误代码 0x603F，取值参见 @ref MID_LISAN_EC_Error_Code。
@@ -936,6 +1018,8 @@ const char *MID_LisanEc_ErrorCodeToString(uint16_t errorCode)
       return "unknown";
   }
 }
+#endif
+
 
 /**
   * @brief  判断工作模式是否为驱动器支持的模式。

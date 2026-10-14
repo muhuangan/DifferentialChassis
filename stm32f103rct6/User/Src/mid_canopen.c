@@ -38,12 +38,18 @@ static uint32_t s_busOffRecoveryTick = 0U;      /**< 最近一次 Bus-Off 自恢
 static MID_CANopenStatusTypeDef MID_CANopen_SendFrame(uint32_t cobId, const uint8_t *pData, uint8_t length);
 static MID_CANopenStatusTypeDef MID_CANopen_SdoExchange(uint8_t nodeId, const uint8_t *pRequest, uint8_t **ppResponse);
 static MID_CANopenStatusTypeDef MID_CANopen_RecordAbort(uint8_t nodeId, const uint8_t *pResponse);
+#if (MID_CANOPEN_ENABLE_PDO == 1)
 static MID_CANopenStatusTypeDef MID_CANopen_PdoConfigure(uint8_t nodeId, uint16_t communicationIndex,
                                                         uint16_t mappingIndex, const MID_CANopenPdoMapTypeDef *pMap,
                                                         uint8_t mapCount, uint32_t cobId, uint8_t transmissionType,
                                                         uint16_t eventTimerMs);
+#endif
+#if (MID_CANOPEN_ENABLE_PDO == 1)
 static uint8_t MID_CANopen_GetPdoOffset(MID_CANopenPdoIndexTypeDef pdoIndex);
+#endif
+#if (MID_CANOPEN_ENABLE_PDO == 1)
 static bool MID_CANopen_GetPdoIndex(uint16_t functionCode, bool isTpdo, MID_CANopenPdoIndexTypeDef *pPdoIndex);
+#endif
 
 /**
   * @brief  初始化 CANopen 协议栈。
@@ -274,6 +280,7 @@ MID_CANopenStatusTypeDef MID_CANopen_Nmt_Control(uint8_t nodeId, MID_CANopenNmtC
   return MID_CANopen_SendFrame(MID_CANOPEN_COB_NMT, data, 2U);
 }
 
+#if (MID_CANOPEN_ENABLE_PDO == 1)
 /**
   * @brief  发送同步帧。
   * @param  None
@@ -288,6 +295,8 @@ MID_CANopenStatusTypeDef MID_CANopen_Sync_Send(void)
 
   return MID_CANopen_SendFrame(MID_CANOPEN_COB_SYNC, &s_syncDummy, 0U);
 }
+#endif
+
 
 /**
   * @brief  通过 SDO 加速传输写入对象字典。
@@ -312,7 +321,7 @@ MID_CANopenStatusTypeDef MID_CANopen_Sync_Send(void)
   *         发送后按应答命令字分类：中止码转入 MID_CANopen_RecordAbort 记录，非下载应答判为错误。
   *         驱动器对象字典中对象长度均不超过 4 字节，因此只实现加速传输。
   */
-MID_CANopenStatusTypeDef MID_CANopen_Sdo_Write(uint8_t nodeId, uint16_t index, uint8_t subIndex,
+static MID_CANopenStatusTypeDef MID_CANopen_Sdo_Write(uint8_t nodeId, uint16_t index, uint8_t subIndex,
                                                const void *pData, uint8_t dataSize)
 {
   uint8_t request[MID_CANOPEN_FRAME_DATA_SIZE_BYTES] = {0};
@@ -382,7 +391,7 @@ MID_CANopenStatusTypeDef MID_CANopen_Sdo_Write(uint8_t nodeId, uint16_t index, u
   *         中止码转入 MID_CANopen_RecordAbort 记录。
   *         驱动器对象字典中对象长度均不超过 4 字节，因此只实现加速传输。
   */
-MID_CANopenStatusTypeDef MID_CANopen_Sdo_Read(uint8_t nodeId, uint16_t index, uint8_t subIndex,
+static MID_CANopenStatusTypeDef MID_CANopen_Sdo_Read(uint8_t nodeId, uint16_t index, uint8_t subIndex,
                                               void *pData, uint8_t dataSize)
 {
   uint8_t request[MID_CANOPEN_FRAME_DATA_SIZE_BYTES] = {0};
@@ -543,23 +552,6 @@ MID_CANopenStatusTypeDef MID_CANopen_Sdo_WriteI32(uint8_t nodeId, uint16_t index
   return MID_CANopen_Sdo_Write(nodeId, index, subIndex, &value, 4U);
 }
 
-/**
-  * @brief  以单字节读取对象字典。
-  * @param  nodeId    节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
-  *                   取值参见 @ref MID_CANOPEN_Protocol_Constant。
-  * @param  index     对象字典索引，取值参见 @ref MID_CANOPEN_OD_Communication_Profile、
-  *                   @ref MID_CANOPEN_OD_Manufacturer_Area 与 @ref MID_CANOPEN_OD_Device_Profile。
-  * @param  subIndex  对象字典子索引，取值参见 @ref MID_CANOPEN_OD_Communication_SubIndex、
-  *                   @ref MID_CANOPEN_OD_Manufacturer_SubIndex 与 @ref MID_CANOPEN_OD_Device_Profile_SubIndex。
-  * @param  pValue    指向接收读回8 位无符号数值的变量的指针，不可为 NULL。
-  * @retval MID_CANOPEN_OK 读取成功。
-  * @retval 其他          MID_CANopen_Sdo_Read 的错误码。
-  * @note   读回长度固定为 1 字节，直接转调 MID_CANopen_Sdo_Read。
-  */
-MID_CANopenStatusTypeDef MID_CANopen_Sdo_ReadU8(uint8_t nodeId, uint16_t index, uint8_t subIndex, uint8_t *pValue)
-{
-  return MID_CANopen_Sdo_Read(nodeId, index, subIndex, pValue, 1U);
-}
 
 /**
   * @brief  以双字节读取对象字典。
@@ -651,6 +643,7 @@ MID_CANopenStatusTypeDef MID_CANopen_Sdo_ReadI32(uint8_t nodeId, uint16_t index,
   return MID_CANopen_Sdo_Read(nodeId, index, subIndex, pValue, 4U);
 }
 
+#if (MID_CANOPEN_ENABLE_PDO == 1)
 /**
   * @brief  取 PDO 的默认 COB-ID。
   * @param  nodeId    节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
@@ -678,7 +671,10 @@ uint32_t MID_CANopen_GetDefaultCobId(uint8_t nodeId, MID_CANopenPdoIndexTypeDef 
 
   return (uint32_t)base + (uint32_t)(((uint16_t)pdoIndex - 1U) * step) + (uint32_t)nodeId;
 }
+#endif
 
+
+#if (MID_CANOPEN_ENABLE_PDO == 1)
 /**
   * @brief  配置 RPDO 的通信参数与映射参数。
   * @param  nodeId            节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
@@ -723,7 +719,10 @@ MID_CANopenStatusTypeDef MID_CANopen_Pdo_ConfigRx(uint8_t nodeId, MID_CANopenPdo
                                   (uint16_t)(MID_CANOPEN_OD_RPDO_MAPPING + MID_CANopen_GetPdoOffset(pdoIndex)),
                                   pMap, mapCount, cobId, transmissionType, eventTimerMs);
 }
+#endif
 
+
+#if (MID_CANOPEN_ENABLE_PDO == 1)
 /**
   * @brief  配置 TPDO 的通信参数与映射参数。
   * @param  nodeId            节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
@@ -768,7 +767,10 @@ MID_CANopenStatusTypeDef MID_CANopen_Pdo_ConfigTx(uint8_t nodeId, MID_CANopenPdo
                                   (uint16_t)(MID_CANOPEN_OD_TPDO_MAPPING + MID_CANopen_GetPdoOffset(pdoIndex)),
                                   pMap, mapCount, cobId, transmissionType, eventTimerMs);
 }
+#endif
 
+
+#if (MID_CANOPEN_ENABLE_PDO == 1)
 /**
   * @brief  发送一帧 RPDO 数据。
   * @param  nodeId    节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
@@ -802,7 +804,10 @@ MID_CANopenStatusTypeDef MID_CANopen_Rpdo_Send(uint8_t nodeId, MID_CANopenPdoInd
 
   return MID_CANopen_SendFrame(cobId, pData, length);
 }
+#endif
 
+
+#if (MID_CANOPEN_ENABLE_PDO == 1)
 /**
   * @brief  读取最近一次接收到的 TPDO 数据。
   * @param  nodeId    节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
@@ -842,6 +847,8 @@ bool MID_CANopen_GetTpdo(uint8_t nodeId, MID_CANopenPdoIndexTypeDef pdoIndex, ui
 
   return true;
 }
+#endif
+
 
 /**
   * @brief  将 SDO 中止码转换为可读文本。
@@ -874,6 +881,7 @@ const char *MID_CANopen_SdoAbortToString(uint32_t abortCode)
   }
 }
 
+#if (MID_CANOPEN_ENABLE_PDO == 1)
 /**
   * @brief  TPDO 数据到达回调。
   * @param  nodeId    节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
@@ -893,6 +901,8 @@ __weak void MID_CANopen_TpdoReceivedCallback(uint8_t nodeId, MID_CANopenPdoIndex
   (void)pData;
   (void)length;
 }
+#endif
+
 
 /**
   * @brief  CAN 接收中断回调，分发 SDO、TPDO、紧急报文与心跳帧。
@@ -904,7 +914,7 @@ __weak void MID_CANopen_TpdoReceivedCallback(uint8_t nodeId, MID_CANopenPdoIndex
   *         都与当前事务一致时才存入缓存并置应答标志，长度不足 8 字节的帧一并丢弃，避免上一笔事务的
   *         迟到应答或无关帧被当作本次应答；
   *         心跳更新 NMT 状态与时间戳、累计计数并标记在线，紧急报文记录错误代码，两者均要求数据段长度符合各自定义；
-  *         TPDO 存入对应缓存并写回长度、时间戳与到达标志，最后回调通知应用层。
+  *         TPDO 存入对应缓存并写回长度、时间戳与到达标志，最后回调通知应用层（随 PDO 开关编译）。
   *         中断中只做数据搬运与标志置位，不做阻塞操作。
   */
 void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
@@ -912,10 +922,14 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
   CAN_RxHeaderTypeDef rxHeader = {0};
   uint8_t data[MID_CANOPEN_FRAME_DATA_SIZE_BYTES] = {0};
   MID_CANopenNodeTypeDef *pNode = NULL;
+#if (MID_CANOPEN_ENABLE_PDO == 1)
   MID_CANopenPdoIndexTypeDef pdoIndex = MID_CANOPEN_PDO_1;
+#endif
   uint16_t functionCode = 0U;
   uint8_t nodeId = 0U;
+#if (MID_CANOPEN_ENABLE_PDO == 1)
   uint8_t length = 0U;
+#endif
 
   if ((s_hCanopen.isReady == false) || (hcan != s_hCanopen.hcan))
   {
@@ -992,6 +1006,7 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
     return;
   }
 
+#if (MID_CANOPEN_ENABLE_PDO == 1)
   if (MID_CANopen_GetPdoIndex(functionCode, true, &pdoIndex) == true)
   {
     uint8_t pdoOffset = MID_CANopen_GetPdoOffset(pdoIndex);
@@ -1005,6 +1020,7 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 
     MID_CANopen_TpdoReceivedCallback(nodeId, pdoIndex, pNode->tpdoBuffer[pdoOffset], length);
   }
+#endif
 }
 
 /**
@@ -1160,6 +1176,7 @@ static MID_CANopenStatusTypeDef MID_CANopen_RecordAbort(uint8_t nodeId, const ui
   return MID_CANOPEN_ABORTED;
 }
 
+#if (MID_CANOPEN_ENABLE_PDO == 1)
 /**
   * @brief  按手册 3.3.4 顺序写入 PDO 通信参数与映射参数。
   * @param  nodeId              节点地址，合法范围 MID_CANOPEN_NODE_ID_MIN 至 MID_CANOPEN_NODE_ID_MAX（即 1 至 127），
@@ -1243,7 +1260,10 @@ static MID_CANopenStatusTypeDef MID_CANopen_PdoConfigure(uint8_t nodeId, uint16_
 
   return MID_CANopen_Sdo_WriteU32(nodeId, communicationIndex, MID_CANOPEN_OD_PDO_SUB_COB_ID, cobId);
 }
+#endif
 
+
+#if (MID_CANOPEN_ENABLE_PDO == 1)
 /**
   * @brief  取 PDO 组号对应的索引偏移。
   * @param  pdoIndex  PDO 组号，取 MID_CANopenPdoIndexTypeDef 枚举值，取值参见 @ref MID_CANOPEN_PDO_Index。
@@ -1259,7 +1279,10 @@ static uint8_t MID_CANopen_GetPdoOffset(MID_CANopenPdoIndexTypeDef pdoIndex)
 
   return (uint8_t)((uint8_t)pdoIndex - 1U);
 }
+#endif
 
+
+#if (MID_CANOPEN_ENABLE_PDO == 1)
 /**
   * @brief  按功能码解析 PDO 组号。
   * @param  functionCode  已按 MID_CANOPEN_COB_ID_FUNCTION_MASK 掩码后的 11 位标识符高 8 位功能码，
@@ -1286,3 +1309,5 @@ static bool MID_CANopen_GetPdoIndex(uint16_t functionCode, bool isTpdo, MID_CANo
 
   return true;
 }
+#endif
+

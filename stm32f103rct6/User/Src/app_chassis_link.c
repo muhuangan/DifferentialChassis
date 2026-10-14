@@ -76,7 +76,11 @@ static volatile uint32_t s_dispatchFailureCount = 0U;    /**< 转速下发失败
 static volatile uint32_t s_lastSdoAbortCode = 0U;        /**< 最近一次下发失败对应节点的 SDO 中止码。 */
 static volatile uint32_t s_commLostCount = 0U;           /**< 通信超时触发停机的累计次数。 */
 
-#if (CHASSIS_LINK_SELF_TEST_ENABLE == 1U) && !CHASSIS_LINK_POSITION_TEST_ACTIVE
+#if (CHASSIS_LINK_SELF_TEST_ENABLE == 0U)
+static uint32_t s_pulsesPerWheelRev[CHASSIS_LINK_WHEEL_COUNT]; /**< 左右轮各转一圈对应的脉冲数，取 2001h 每电机圈脉冲数乘减速比，用于把上位机 rpm 换算成 60FFh 的脉冲每秒。 */
+#endif
+
+#if (CHASSIS_LINK_SPIN_TEST_ACTIVE == 1)
 /* 自检节点地址组，顺序由 CHASSIS_LINK_SELF_TEST_NODE_ID_LIST 决定，点动时按下标依次轮转。 */
 static const uint8_t s_selfTestNodeIds[CHASSIS_LINK_SELF_TEST_NODE_COUNT] = CHASSIS_LINK_SELF_TEST_NODE_ID_LIST;
 
@@ -122,6 +126,74 @@ static int32_t APP_ChassisLink_ApplyInvert(int32_t speed, uint32_t invertFlag)
 {
   return ((invertFlag != 0U) ? (-speed) : speed);
 }
+
+#if (CHASSIS_LINK_SELF_TEST_ENABLE == 0U)
+/**
+  * @brief  把电机每圈脉冲数换算到轮子一圈的脉冲数。
+  * @param  motorPulses  驱动器 2001h 读回的电机每圈脉冲数，即细分。
+  * @retval 轮子一圈对应的脉冲数。
+  * @note   减速比取 CHASSIS_LINK_GEAR_NUMERATOR 与 CHASSIS_LINK_GEAR_DENOMINATOR；
+  *         用 64 位中间量先乘后除并做四舍五入，避免大细分时溢出。
+  */
+static uint32_t APP_ChassisLink_ScaleToWheel(uint32_t motorPulses)
+{
+  return (uint32_t) (((uint64_t) motorPulses * CHASSIS_LINK_GEAR_NUMERATOR +
+                      (CHASSIS_LINK_GEAR_DENOMINATOR / 2U)) / CHASSIS_LINK_GEAR_DENOMINATOR);
+}
+
+/**
+  * @brief  启动阶段读入左右轮各转一圈对应的脉冲数。
+  * @param  None
+  * @retval None
+  * @note   对每个轮节点读一次 2001h；读取失败或读回 0 时改用
+  *         CHASSIS_LINK_PULSES_PER_MOTOR_REV_DEFAULT 乘减速比，保证换算始终有可用基准。
+  *         本函数在调度器启动前调用，失败只影响换算基准，不阻塞启动流程。
+  */
+static void APP_ChassisLink_ReadPulsesPerRev(void)
+{
+  uint8_t  index;
+  uint32_t motorPulses = 0U;
+
+  for (index = 0U; index < CHASSIS_LINK_WHEEL_COUNT; index++)
+  {
+    if ((MID_CANopen_Sdo_ReadU32(s_wheelNodeIds[index], MID_CANOPEN_OD_MICRO_STEP,
+                                 MID_CANOPEN_OD_SUB_INDEX_0, &motorPulses) == MID_CANOPEN_OK) &&
+        (motorPulses != 0U))
+    {
+      s_pulsesPerWheelRev[index] = APP_ChassisLink_ScaleToWheel(motorPulses);
+    }
+    else
+    {
+      s_pulsesPerWheelRev[index] = APP_ChassisLink_ScaleToWheel(CHASSIS_LINK_PULSES_PER_MOTOR_REV_DEFAULT);
+    }
+  }
+}
+
+/**
+  * @brief  把上位机下发的轮子转速换算成目标速度对象 0x60FF 的脉冲每秒。
+  * @param  rpm           轮子目标转速，单位转每分，即帧内原始数值。
+  * @param  pulsesPerRev  该轮一圈对应的脉冲数，由启动阶段读入。
+  * @retval 目标速度，单位脉冲每秒。
+  * @note   换算式为 转速 乘 每圈脉冲数 除 60，先乘后除并用 64 位中间量，结果按 int32 截断；
+  *         默认 4000 细分与 10:1 减速比下 1 转每分约为 667 脉冲每秒。
+  */
+static int32_t APP_ChassisLink_RpmToPps(int32_t rpm, uint32_t pulsesPerRev)
+{
+  int64_t pps = ((int64_t) rpm * (int64_t) pulsesPerRev) / 60;
+
+  if (pps > (int64_t) INT32_MAX)
+  {
+    return INT32_MAX;
+  }
+
+  if (pps < (int64_t) INT32_MIN)
+  {
+    return INT32_MIN;
+  }
+
+  return (int32_t) pps;
+}
+#endif
 
 #if (CHASSIS_LINK_SELF_TEST_ENABLE == 0U)
 /**
@@ -228,14 +300,19 @@ static void APP_ChassisLink_SendSpeeds(int32_t leftSpeed, int32_t rightSpeed)
   * @brief  用一帧合法数据刷新目标速度与接收时刻。
   * @param  pPayload  已解析出的负载，不可为 NULL。
   * @retval None
-  * @note   左右轮速度先按 CHASSIS_LINK_SPEED_INVERT_LEFT 与 CHASSIS_LINK_SPEED_INVERT_RIGHT
-  *         统一方向，再写入目标值；同时累加合法帧计数并刷新最近接收时刻，供失联判定使用。
+  * @note   帧内两个字段是轮子目标转速，单位转每分，先按每轮脉冲数换算成 60FFh 的脉冲每秒，
+  *         再按 CHASSIS_LINK_SPEED_INVERT_LEFT 与 CHASSIS_LINK_SPEED_INVERT_RIGHT 统一方向；
+  *         同时累加合法帧计数并刷新最近接收时刻，供失联判定使用。
   */
 static void APP_ChassisLink_OnValidFrame(const MID_ChassisPayloadTypeDef *pPayload)
 {
   s_validFrameCount++;
-  s_targetLeftSpeed = APP_ChassisLink_ApplyInvert(pPayload->leftSpeed, CHASSIS_LINK_SPEED_INVERT_LEFT);
-  s_targetRightSpeed = APP_ChassisLink_ApplyInvert(pPayload->rightSpeed, CHASSIS_LINK_SPEED_INVERT_RIGHT);
+  s_targetLeftSpeed = APP_ChassisLink_ApplyInvert(
+    APP_ChassisLink_RpmToPps(pPayload->leftSpeed, s_pulsesPerWheelRev[CHASSIS_LINK_WHEEL_INDEX_LEFT]),
+    CHASSIS_LINK_SPEED_INVERT_LEFT);
+  s_targetRightSpeed = APP_ChassisLink_ApplyInvert(
+    APP_ChassisLink_RpmToPps(pPayload->rightSpeed, s_pulsesPerWheelRev[CHASSIS_LINK_WHEEL_INDEX_RIGHT]),
+    CHASSIS_LINK_SPEED_INVERT_RIGHT);
   s_lastValidFrameTick = HAL_GetTick();
   s_hasValidFrame = true;
 }
@@ -393,6 +470,7 @@ static void APP_ChassisLink_Dispatch(void)
   * @retval MID_CANOPEN_INVALID_PARAM CAN 句柄非法。
   * @retval MID_CANOPEN_ERROR         协议栈、节点注册、信号量或串口接收启动失败。
   * @note   执行顺序：初始化 CANopen 协议栈；注册全部轮节点，并在自检开关打开时补注册自检节点；
+  *         读入左右轮各转一圈的脉冲数作为 rpm 换算基准，读不到 2001h 时回落到配置默认细分；
   *         创建绑定静态控制块的二值信号量；
   *         注册独立启动诊断上下文，配置与使能由任务周期执行并验证；
   *         注册串口通知回调并以循环 DMA 加空闲中断启动 UART4 接收。
@@ -417,7 +495,7 @@ MID_CANopenStatusTypeDef APP_ChassisLink_Init(void)
     }
   }
 
-#if (CHASSIS_LINK_SELF_TEST_ENABLE == 1U) && !CHASSIS_LINK_POSITION_TEST_ACTIVE
+#if (CHASSIS_LINK_SPIN_TEST_ACTIVE == 1)
   /* 自检节点必须注册后才能收发 SDO，与轮节点取并集：已在节点表中的地址跳过，其余补注册。 */
   for (index = 0U; index < CHASSIS_LINK_SELF_TEST_NODE_COUNT; index++)
   {
@@ -442,7 +520,7 @@ MID_CANopenStatusTypeDef APP_ChassisLink_Init(void)
       return status;
     }
   }
-#if (CHASSIS_LINK_SELF_TEST_ENABLE == 1U) && !CHASSIS_LINK_POSITION_TEST_ACTIVE
+#if (CHASSIS_LINK_SPIN_TEST_ACTIVE == 1)
   for (index = 0U; index < CHASSIS_LINK_SELF_TEST_NODE_COUNT; index++)
   {
     status = APP_MotorStartup_AddNode(s_selfTestNodeIds[index]);
@@ -464,6 +542,11 @@ MID_CANopenStatusTypeDef APP_ChassisLink_Init(void)
   s_lastValidFrameTick = HAL_GetTick();
   s_lastDispatchTick = s_lastValidFrameTick;
   s_isDriveReady = false;
+
+#if (CHASSIS_LINK_SELF_TEST_ENABLE == 0U)
+  /* 换算基准先落地：读不到 2001h 时内部回落到默认细分，之后每帧都按它把 rpm 换成脉冲每秒。 */
+  APP_ChassisLink_ReadPulsesPerRev();
+#endif
 
   MID_UartRing_SetNotifyCallback(APP_ChassisLink_RxNotifyFromIsr);
   if (MID_UartRing_Init() != HAL_OK)

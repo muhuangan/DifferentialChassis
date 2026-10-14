@@ -112,6 +112,7 @@ static void APP_MotorStartup_Begin(uint8_t index, APP_MotorStartupStepTypeDef st
  */
 static void APP_MotorStartup_Publish(uint8_t index)
 {
+#if (CHASSIS_LINK_MOTOR_DEBUG_ENABLE == 1U)
   APP_MotorCommandDebugTypeDef *pRecord = &s_contexts[index].record;
   g_motorStartupDebug[index].latest = *pRecord;
   if (pRecord->step < APP_MOTOR_STEP_COUNT)
@@ -122,6 +123,9 @@ static void APP_MotorStartup_Publish(uint8_t index)
   {
     g_motorStartupDebug[index].firstSteps[pRecord->step] = *pRecord;
   }
+#else
+  (void) index;
+#endif
 }
 
 /**
@@ -139,11 +143,14 @@ static void APP_MotorStartup_Finish(uint8_t index, bool confirmed)
   APP_MotorStartup_Publish(index);
   if (!confirmed)
   {
+#if (CHASSIS_LINK_MOTOR_DEBUG_ENABLE == 1U)
     g_motorStartupDebug[index].lastFailure = pContext->record;
+#endif
     g_motorStartupDebug[index].failureCount++;
   }
   if (pContext->isMotion)
   {
+#if (CHASSIS_LINK_MOTOR_DEBUG_ENABLE == 1U)
     if ((pContext->record.commandValue != 0) &&
         (g_motorStartupDebug[index].firstStart.result == APP_MOTOR_RESULT_NOT_RUN))
     {
@@ -154,6 +161,7 @@ static void APP_MotorStartup_Finish(uint8_t index, bool confirmed)
     {
       g_motorStartupDebug[index].firstStop = pContext->record;
     }
+#endif
     pContext->phase = APP_MOTOR_PHASE_IDLE;
     return;
   }
@@ -187,15 +195,18 @@ static void APP_MotorStartup_Finish(uint8_t index, bool confirmed)
     step = (APP_MotorStartupStepTypeDef) (step + 1U);
   }
 #if !CHASSIS_LINK_POSITION_TEST_ACTIVE
+#if (CHASSIS_LINK_MOTOR_DEBUG_ENABLE == 1U)
   g_motorStartupDebug[index].latestSteps[APP_MOTOR_STEP_PROFILE_SPEED].result = APP_MOTOR_RESULT_SKIPPED;
   if (g_motorStartupDebug[index].attemptCount == 1U)
   {
     g_motorStartupDebug[index].firstSteps[APP_MOTOR_STEP_PROFILE_SPEED].result = APP_MOTOR_RESULT_SKIPPED;
   }
 #endif
+#endif
 #if (CHASSIS_LINK_ENABLE_PROFILE_RAMP == 0U)
   if (step == APP_MOTOR_STEP_ACCELERATION)
   {
+#if (CHASSIS_LINK_MOTOR_DEBUG_ENABLE == 1U)
     g_motorStartupDebug[index].latestSteps[APP_MOTOR_STEP_ACCELERATION].result = APP_MOTOR_RESULT_SKIPPED;
     g_motorStartupDebug[index].latestSteps[APP_MOTOR_STEP_DECELERATION].result = APP_MOTOR_RESULT_SKIPPED;
     if (g_motorStartupDebug[index].attemptCount == 1U)
@@ -203,6 +214,7 @@ static void APP_MotorStartup_Finish(uint8_t index, bool confirmed)
       g_motorStartupDebug[index].firstSteps[APP_MOTOR_STEP_ACCELERATION].result = APP_MOTOR_RESULT_SKIPPED;
       g_motorStartupDebug[index].firstSteps[APP_MOTOR_STEP_DECELERATION].result = APP_MOTOR_RESULT_SKIPPED;
     }
+#endif
 #if CHASSIS_LINK_POSITION_TEST_ACTIVE
     step = APP_MOTOR_STEP_PROFILE_SPEED;
 #else
@@ -397,7 +409,6 @@ static void APP_MotorStartup_RunNode(uint8_t index)
   uint32_t                        currentTick = HAL_GetTick();
   bool                            isRead = false;
   bool                            isExistingRamp = false;
-  uint8_t                         stepIndex = 0U;
   switch (pContext->phase)
   {
     case APP_MOTOR_PHASE_WAIT_BOOT:
@@ -482,12 +493,15 @@ static void APP_MotorStartup_RunNode(uint8_t index)
     case APP_MOTOR_PHASE_RETRY:
       if ((currentTick - pContext->nextTick) >= CHASSIS_LINK_DRIVE_RETRY_PERIOD_MS)
       {
+#if (CHASSIS_LINK_MOTOR_DEBUG_ENABLE == 1U)
         APP_MotorCommandDebugTypeDef emptyRecord;
+        uint8_t                       stepIndex;
         (void) memset(&emptyRecord, 0, sizeof(emptyRecord));
         for (stepIndex = 0U; stepIndex < APP_MOTOR_STEP_COUNT; stepIndex++)
         {
           g_motorStartupDebug[index].latestSteps[stepIndex] = emptyRecord;
         }
+#endif
         g_motorStartupDebug[index].attemptCount++;
         APP_MotorStartup_Begin(index, APP_MOTOR_STEP_WAIT_HEARTBEAT, 0);
       }
@@ -561,6 +575,7 @@ bool APP_MotorStartup_IsReady(uint8_t nodeId)
   return (index < CANOPEN_MAX_NODE_COUNT) && g_motorStartupDebug[index].isReady;
 }
 
+#if (CHASSIS_LINK_SPIN_TEST_ACTIVE == 1) || (CHASSIS_LINK_SYNC_ROUND_ACTIVE == 1)
 /**
  * @brief  排入一条目标速度命令，随后读回目标、实际速度、状态字和错误码。
  * @note   OK 仅表示请求入队；必须等待 GetMotionResult 返回 VERIFIED 才能判定运动或停止生效。
@@ -598,10 +613,10 @@ APP_MotorCommandResultTypeDef APP_MotorStartup_GetMotionResult(uint8_t nodeId)
   }
   return s_contexts[index].record.result;
 }
-
-volatile APP_PositionTestDebugTypeDef g_motorPositionDebug[CANOPEN_MAX_NODE_COUNT];
+#endif
 
 #if CHASSIS_LINK_POSITION_TEST_ACTIVE
+volatile APP_PositionTestDebugTypeDef g_motorPositionDebug[CANOPEN_MAX_NODE_COUNT];
 static APP_PositionTestDebugTypeDef s_positionTests[CANOPEN_MAX_NODE_COUNT];
 static uint8_t                      s_positionActive = CANOPEN_MAX_NODE_COUNT;
 static uint32_t                     s_positionNextTick;
@@ -610,7 +625,7 @@ static uint32_t                     s_positionNextTick;
  * @brief 建立本段位移记录，所有读取和写入状态初始化为未执行。
  * @note 第一段正向，第二段反向；各节点每次上电只执行这一对有限位移。
  */
-static void APP_PositionTest_BeginMove(APP_PositionTestDebugTypeDef *pTest)
+static void APP_MotorStartup_PositionTest_BeginMove(APP_PositionTestDebugTypeDef *pTest)
 {
   APP_PositionMoveDebugTypeDef *pMove = &pTest->moves[pTest->moveIndex];
   uint8_t                       phase;
@@ -630,7 +645,7 @@ static void APP_PositionTest_BeginMove(APP_PositionTestDebugTypeDef *pTest)
  * @brief 锁存失败阶段并进入停止流程。
  * @note 不重试相对位移触发，避免应答丢失时重复走一段；停稳前不允许另一轮开始。
  */
-static void APP_PositionTest_Fail(APP_PositionTestDebugTypeDef *pTest)
+static void APP_MotorStartup_PositionTest_Fail(APP_PositionTestDebugTypeDef *pTest)
 {
   APP_PositionMoveDebugTypeDef *pMove = &pTest->moves[pTest->moveIndex];
   pMove->failedPhase = pTest->phase;
@@ -642,6 +657,7 @@ static void APP_PositionTest_Fail(APP_PositionTestDebugTypeDef *pTest)
 }
 #endif
 
+#if (CHASSIS_LINK_POSITION_TEST_ACTIVE == 1)
 /**
  * @brief 对已就绪节点逐个执行正反各一次有限位移，并记录真实到位和停稳结果。
  * @note 每次至多一个 SDO 事务；触发前校验模式、相对目标和 bit4 清零应答。
@@ -649,7 +665,6 @@ static void APP_PositionTest_Fail(APP_PositionTestDebugTypeDef *pTest)
  */
 void APP_MotorStartup_PositionTestProcess(void)
 {
-#if CHASSIS_LINK_POSITION_TEST_ACTIVE
   APP_PositionTestDebugTypeDef *pTest;
   APP_PositionMoveDebugTypeDef *pMove;
   APP_PositionPhaseTypeDef      phase;
@@ -672,7 +687,7 @@ void APP_MotorStartup_PositionTestProcess(void)
         s_positionActive = index;
         s_positionTests[index].nodeId = g_motorStartupDebug[index].nodeId;
         s_positionTests[index].result = APP_MOTOR_RESULT_PENDING;
-        APP_PositionTest_BeginMove(&s_positionTests[index]);
+        APP_MotorStartup_PositionTest_BeginMove(&s_positionTests[index]);
         break;
       }
     }
@@ -686,7 +701,7 @@ void APP_MotorStartup_PositionTestProcess(void)
   pMove = &pTest->moves[pTest->moveIndex];
   if ((pMove->result == APP_MOTOR_RESULT_PENDING) && ((now - pMove->startTick) >= CHASSIS_LINK_POSITION_TIMEOUT_MS))
   {
-    APP_PositionTest_Fail(pTest);
+    APP_MotorStartup_PositionTest_Fail(pTest);
   }
   phase = pTest->phase;
   switch (phase)
@@ -695,7 +710,7 @@ void APP_MotorStartup_PositionTestProcess(void)
       status = MID_LisanEc_ReadOperationMode(pTest->nodeId, &pMove->actualMode);
       if ((status == MID_CANOPEN_OK) && (pMove->actualMode != MID_LISAN_EC_MODE_PROFILE_POSITION))
       {
-        APP_PositionTest_Fail(pTest);
+        APP_MotorStartup_PositionTest_Fail(pTest);
       }
       break;
     case APP_POSITION_PHASE_BASELINE:
@@ -703,7 +718,7 @@ void APP_MotorStartup_PositionTestProcess(void)
       expected = (int64_t) pMove->startPosition + pMove->relativePulses;
       if ((status == MID_CANOPEN_OK) && ((expected > INT32_MAX) || (expected < INT32_MIN)))
       {
-        APP_PositionTest_Fail(pTest);
+        APP_MotorStartup_PositionTest_Fail(pTest);
       }
       else if (status == MID_CANOPEN_OK)
       {
@@ -721,7 +736,7 @@ void APP_MotorStartup_PositionTestProcess(void)
       status = MID_CANopen_Sdo_ReadI32(pTest->nodeId, MID_CANOPEN_OD_TARGET_POSITION, 0U, &pMove->targetReadback);
       if ((status == MID_CANOPEN_OK) && (pMove->targetReadback != pMove->relativePulses))
       {
-        APP_PositionTest_Fail(pTest);
+        APP_MotorStartup_PositionTest_Fail(pTest);
       }
       break;
     case APP_POSITION_PHASE_TRIGGER:
@@ -751,7 +766,7 @@ void APP_MotorStartup_PositionTestProcess(void)
       if ((MID_LisanEc_ParseState(pMove->statusWord) != MID_LISAN_EC_STATE_OPERATION_ENABLED) ||
           (pMove->errorCode != 0U))
       {
-        APP_PositionTest_Fail(pTest);
+        APP_MotorStartup_PositionTest_Fail(pTest);
       }
       else if (((pMove->statusWord & MID_LISAN_EC_STATUS_WORD_TARGET_REACHED) != 0U) &&
                (error >= -CHASSIS_LINK_POSITION_TOLERANCE_PULSES) &&
@@ -776,7 +791,7 @@ void APP_MotorStartup_PositionTestProcess(void)
         if ((pTest->moveIndex + 1U) < APP_POSITION_MOVE_COUNT)
         {
           pTest->moveIndex++;
-          APP_PositionTest_BeginMove(pTest);
+          APP_MotorStartup_PositionTest_BeginMove(pTest);
         }
         else
         {
@@ -830,7 +845,7 @@ void APP_MotorStartup_PositionTestProcess(void)
     {
       if (status != MID_CANOPEN_OK)
       {
-        APP_PositionTest_Fail(pTest);
+        APP_MotorStartup_PositionTest_Fail(pTest);
       }
       else if (pTest->phase == phase)
       {
@@ -839,12 +854,12 @@ void APP_MotorStartup_PositionTestProcess(void)
     }
   }
   g_motorPositionDebug[index] = *pTest;
-#endif
 }
+#endif
 
+
+#if (CHASSIS_LINK_SPIN_TEST_ACTIVE == 1)
 volatile APP_VelocityTestDebugTypeDef g_motorVelocityDebug[CANOPEN_MAX_NODE_COUNT];
-
-#if (CHASSIS_LINK_SELF_TEST_ENABLE == 1U) && !CHASSIS_LINK_POSITION_TEST_ACTIVE
 static APP_VelocityTestDebugTypeDef s_velocityTests[CANOPEN_MAX_NODE_COUNT];
 static bool                         s_spinInitialized;   /**< 斜坡与记录是否已初始化。 */
 static bool                         s_spinRising = true; /**< 当前处于升速段还是降速段。 */
@@ -885,7 +900,7 @@ static int32_t APP_Spin_ApplyDirection(uint8_t nodeId, int32_t speed)
  * @retval None
  * @note 失败节点此后只停在零速，不再下发目标速度；其余节点继续按斜坡运行。
  */
-static void APP_VelocityTest_RecordFailure(APP_VelocityTestDebugTypeDef *pTest,
+static void APP_MotorStartup_VelocityTest_RecordFailure(APP_VelocityTestDebugTypeDef *pTest,
                                            const APP_MotorCommandDebugTypeDef *pRecord)
 {
   if (pTest->hasFailure == false)
@@ -898,6 +913,7 @@ static void APP_VelocityTest_RecordFailure(APP_VelocityTestDebugTypeDef *pTest,
 }
 #endif
 
+#if (CHASSIS_LINK_SPIN_TEST_ACTIVE == 1)
 /**
   * @brief  让全部已就绪节点同时按三角波速度往复运行。
   * @param  pNodeIds   节点地址数组首地址，数组内的节点同时转动，不可为 NULL。
@@ -914,7 +930,6 @@ static void APP_VelocityTest_RecordFailure(APP_VelocityTestDebugTypeDef *pTest,
   */
 void APP_MotorStartup_VelocityTestProcess(const uint8_t *pNodeIds, uint8_t nodeCount)
 {
-#if (CHASSIS_LINK_SELF_TEST_ENABLE == 1U) && !CHASSIS_LINK_POSITION_TEST_ACTIVE
   APP_VelocityTestDebugTypeDef *pTest;
   APP_MotorCommandDebugTypeDef *pForward;
   MID_LisanEcStatusWordTypeDef  driveStatus;
@@ -1035,7 +1050,7 @@ void APP_MotorStartup_VelocityTestProcess(const uint8_t *pNodeIds, uint8_t nodeC
       if (pForward->commandAccepted == false)
       {
         pForward->result = APP_MOTOR_RESULT_FAILED;
-        APP_VelocityTest_RecordFailure(pTest, pForward);
+        APP_MotorStartup_VelocityTest_RecordFailure(pTest, pForward);
         (void) MID_LisanEc_SetTargetVelocity(pTest->nodeId, 0);
       }
       else
@@ -1073,7 +1088,7 @@ void APP_MotorStartup_VelocityTestProcess(const uint8_t *pNodeIds, uint8_t nodeC
         {
           pForward->result = APP_MOTOR_RESULT_FAILED;
           pForward->effectConfirmed = false;
-          APP_VelocityTest_RecordFailure(pTest, pForward);
+          APP_MotorStartup_VelocityTest_RecordFailure(pTest, pForward);
           (void) MID_LisanEc_SetTargetVelocity(pTest->nodeId, 0);
         }
       }
@@ -1092,15 +1107,12 @@ void APP_MotorStartup_VelocityTestProcess(const uint8_t *pNodeIds, uint8_t nodeC
   {
     s_spinSampleTick = now;
   }
-#else
-  (void) pNodeIds;
-  (void) nodeCount;
-#endif
 }
+#endif
 
-volatile APP_SyncRoundDebugTypeDef g_motorSyncDebug;
 
 #if CHASSIS_LINK_SYNC_ROUND_ACTIVE
+volatile APP_SyncRoundDebugTypeDef g_motorSyncDebug;
 static APP_SyncRoundDebugTypeDef s_syncRound;
 static bool                      s_syncInitialized;
 static bool                      s_syncStartingTargets;
@@ -1111,7 +1123,7 @@ static int32_t                   s_syncNextSpeed;
  * @brief 保存失败原因和采样快照，并立即转入两轮停止流程。
  * @note 失败后不再发非零速度；停止重试不覆盖首次失败快照。
  */
-static void APP_SyncRound_Fail(APP_SyncRoundFailureTypeDef reason, MID_CANopenStatusTypeDef status)
+static void APP_MotorStartup_SyncRound_Fail(APP_SyncRoundFailureTypeDef reason, MID_CANopenStatusTypeDef status)
 {
   if (s_syncRound.failureReason == APP_SYNC_FAILURE_NONE)
   {
@@ -1126,13 +1138,14 @@ static void APP_SyncRound_Fail(APP_SyncRoundFailureTypeDef reason, MID_CANopenSt
 }
 
 /** @brief 返回新一轮采样的第一轮，不读取未完成的其他事务结果。 */
-static void APP_SyncRound_NextWheel(void)
+static void APP_MotorStartup_SyncRound_NextWheel(void)
 {
   s_syncRound.wheelIndex = (uint8_t) ((s_syncRound.wheelIndex + 1U) % APP_SYNC_ROUND_WHEELS);
   s_syncRound.phase = APP_SYNC_PHASE_STATUS;
 }
 #endif
 
+#if (CHASSIS_LINK_SYNC_ROUND_ACTIVE == 1)
 /**
  * @brief 等两轮就绪后一起起转，以位置反馈累计一轮脉冲数，接近终点时降低速度。
  * @note 每次最多一个 SDO 事务；从 2001h 读电机每圈脉冲数并乘配置减速比，不写细分。
@@ -1140,7 +1153,6 @@ static void APP_SyncRound_NextWheel(void)
  */
 void APP_MotorStartup_SyncRoundProcess(const uint8_t *pNodeIds, uint8_t nodeCount)
 {
-#if CHASSIS_LINK_SYNC_ROUND_ACTIVE
   APP_SyncWheelDebugTypeDef   *pWheel;
   APP_SyncRoundPhaseTypeDef    phase;
   MID_CANopenStatusTypeDef     status = MID_CANOPEN_OK;
@@ -1178,11 +1190,11 @@ void APP_MotorStartup_SyncRoundProcess(const uint8_t *pNodeIds, uint8_t nodeCoun
   {
     if (!s_syncRound.started && ((now - s_syncRound.startTick) >= CHASSIS_LINK_SYNC_READY_TIMEOUT_MS))
     {
-      APP_SyncRound_Fail(APP_SYNC_FAILURE_READY_TIMEOUT, MID_CANOPEN_TIMEOUT);
+      APP_MotorStartup_SyncRound_Fail(APP_SYNC_FAILURE_READY_TIMEOUT, MID_CANOPEN_TIMEOUT);
     }
     else if (s_syncRound.started && ((now - s_syncRound.runTick) >= s_syncRound.timeoutMs))
     {
-      APP_SyncRound_Fail(APP_SYNC_FAILURE_TIMEOUT, MID_CANOPEN_TIMEOUT);
+      APP_MotorStartup_SyncRound_Fail(APP_SYNC_FAILURE_TIMEOUT, MID_CANOPEN_TIMEOUT);
     }
   }
   pWheel = &s_syncRound.wheels[s_syncRound.wheelIndex];
@@ -1216,7 +1228,7 @@ void APP_MotorStartup_SyncRoundProcess(const uint8_t *pNodeIds, uint8_t nodeCoun
         if ((pWheel->pulsesPerMotorRev == 0U) || (CHASSIS_LINK_GEAR_DENOMINATOR == 0U) ||
             (CHASSIS_LINK_GEAR_NUMERATOR == 0U) || (CHASSIS_LINK_SELF_TEST_SPEED_PPS <= 0))
         {
-          APP_SyncRound_Fail(APP_SYNC_FAILURE_GEOMETRY, MID_CANOPEN_INVALID_PARAM);
+          APP_MotorStartup_SyncRound_Fail(APP_SYNC_FAILURE_GEOMETRY, MID_CANOPEN_INVALID_PARAM);
           break;
         }
         target =
@@ -1225,7 +1237,7 @@ void APP_MotorStartup_SyncRoundProcess(const uint8_t *pNodeIds, uint8_t nodeCoun
         if ((target <= CHASSIS_LINK_SYNC_POSITION_TOLERANCE_PULSES) ||
             (target > INT32_MAX - CHASSIS_LINK_SYNC_POSITION_TOLERANCE_PULSES))
         {
-          APP_SyncRound_Fail(APP_SYNC_FAILURE_GEOMETRY, MID_CANOPEN_INVALID_PARAM);
+          APP_MotorStartup_SyncRound_Fail(APP_SYNC_FAILURE_GEOMETRY, MID_CANOPEN_INVALID_PARAM);
           break;
         }
         pWheel->targetPulses = (uint32_t) target;
@@ -1233,7 +1245,7 @@ void APP_MotorStartup_SyncRoundProcess(const uint8_t *pNodeIds, uint8_t nodeCoun
                   (uint64_t) CHASSIS_LINK_SELF_TEST_SPEED_PPS * 2000U / CHASSIS_LINK_PROFILE_ACCELERATION_PPS2;
         if (timeout > INT32_MAX)
         {
-          APP_SyncRound_Fail(APP_SYNC_FAILURE_GEOMETRY, MID_CANOPEN_INVALID_PARAM);
+          APP_MotorStartup_SyncRound_Fail(APP_SYNC_FAILURE_GEOMETRY, MID_CANOPEN_INVALID_PARAM);
           break;
         }
         if ((uint32_t) timeout > s_syncRound.timeoutMs)
@@ -1255,7 +1267,7 @@ void APP_MotorStartup_SyncRoundProcess(const uint8_t *pNodeIds, uint8_t nodeCoun
         position = (int64_t) pWheel->startPosition + pWheel->targetPulses;
         if (position > INT32_MAX - CHASSIS_LINK_SYNC_POSITION_TOLERANCE_PULSES)
         {
-          APP_SyncRound_Fail(APP_SYNC_FAILURE_GEOMETRY, MID_CANOPEN_INVALID_PARAM);
+          APP_MotorStartup_SyncRound_Fail(APP_SYNC_FAILURE_GEOMETRY, MID_CANOPEN_INVALID_PARAM);
           break;
         }
         pWheel->actualPosition = pWheel->startPosition;
@@ -1293,7 +1305,7 @@ void APP_MotorStartup_SyncRoundProcess(const uint8_t *pNodeIds, uint8_t nodeCoun
       status = MID_CANopen_Sdo_ReadI32(pWheel->nodeId, MID_CANOPEN_OD_TARGET_VELOCITY, 0U, &pWheel->targetReadback);
       if ((status == MID_CANOPEN_OK) && (pWheel->targetReadback != pWheel->commandSpeed))
       {
-        APP_SyncRound_Fail(APP_SYNC_FAILURE_SDO, MID_CANOPEN_ERROR);
+        APP_MotorStartup_SyncRound_Fail(APP_SYNC_FAILURE_SDO, MID_CANOPEN_ERROR);
       }
       else if (status == MID_CANOPEN_OK)
       {
@@ -1304,7 +1316,7 @@ void APP_MotorStartup_SyncRoundProcess(const uint8_t *pNodeIds, uint8_t nodeCoun
         else
         {
           s_syncStartingTargets = false;
-          APP_SyncRound_NextWheel();
+          APP_MotorStartup_SyncRound_NextWheel();
         }
       }
       break;
@@ -1315,7 +1327,7 @@ void APP_MotorStartup_SyncRoundProcess(const uint8_t *pNodeIds, uint8_t nodeCoun
         pWheel->statusWord = driveStatus.raw;
         if (MID_LisanEc_ParseState(driveStatus.raw) != MID_LISAN_EC_STATE_OPERATION_ENABLED)
         {
-          APP_SyncRound_Fail(APP_SYNC_FAILURE_DRIVE, MID_CANOPEN_NOT_READY);
+          APP_MotorStartup_SyncRound_Fail(APP_SYNC_FAILURE_DRIVE, MID_CANOPEN_NOT_READY);
         }
         else
         {
@@ -1332,7 +1344,7 @@ void APP_MotorStartup_SyncRoundProcess(const uint8_t *pNodeIds, uint8_t nodeCoun
         if ((travelled < -CHASSIS_LINK_SYNC_POSITION_TOLERANCE_PULSES) ||
             (travelled > (int64_t) pWheel->targetPulses + CHASSIS_LINK_SYNC_POSITION_TOLERANCE_PULSES))
         {
-          APP_SyncRound_Fail(APP_SYNC_FAILURE_POSITION, MID_CANOPEN_ERROR);
+          APP_MotorStartup_SyncRound_Fail(APP_SYNC_FAILURE_POSITION, MID_CANOPEN_ERROR);
           break;
         }
         pWheel->travelledPulses = (int32_t) travelled;
@@ -1355,7 +1367,7 @@ void APP_MotorStartup_SyncRoundProcess(const uint8_t *pNodeIds, uint8_t nodeCoun
         if ((pWheel->actualVelocity > CHASSIS_LINK_SELF_TEST_SPEED_PPS + CHASSIS_LINK_MOTION_SPEED_TOLERANCE_PPS) ||
             (pWheel->actualVelocity < -CHASSIS_LINK_MOTION_SPEED_TOLERANCE_PPS))
         {
-          APP_SyncRound_Fail(APP_SYNC_FAILURE_DRIVE, MID_CANOPEN_ERROR);
+          APP_MotorStartup_SyncRound_Fail(APP_SYNC_FAILURE_DRIVE, MID_CANOPEN_ERROR);
         }
         else
         {
@@ -1367,7 +1379,7 @@ void APP_MotorStartup_SyncRoundProcess(const uint8_t *pNodeIds, uint8_t nodeCoun
       status = MID_LisanEc_ReadErrorCode(pWheel->nodeId, &pWheel->errorCode);
       if ((status == MID_CANOPEN_OK) && (pWheel->errorCode != 0U))
       {
-        APP_SyncRound_Fail(APP_SYNC_FAILURE_DRIVE, MID_CANOPEN_ERROR);
+        APP_MotorStartup_SyncRound_Fail(APP_SYNC_FAILURE_DRIVE, MID_CANOPEN_ERROR);
       }
       else if (status == MID_CANOPEN_OK)
       {
@@ -1379,7 +1391,7 @@ void APP_MotorStartup_SyncRoundProcess(const uint8_t *pNodeIds, uint8_t nodeCoun
       if (!pWheel->done && (pWheel->commandSpeed > 0) &&
           ((now - pWheel->lastProgressTick) >= CHASSIS_LINK_SYNC_STALL_MS))
       {
-        APP_SyncRound_Fail(APP_SYNC_FAILURE_STALL, MID_CANOPEN_TIMEOUT);
+        APP_MotorStartup_SyncRound_Fail(APP_SYNC_FAILURE_STALL, MID_CANOPEN_TIMEOUT);
         break;
       }
       if (pWheel->remainingPulses <= CHASSIS_LINK_SYNC_POSITION_TOLERANCE_PULSES)
@@ -1394,7 +1406,7 @@ void APP_MotorStartup_SyncRoundProcess(const uint8_t *pNodeIds, uint8_t nodeCoun
       }
       else if (pWheel->done)
       {
-        APP_SyncRound_Fail(APP_SYNC_FAILURE_POSITION, MID_CANOPEN_ERROR);
+        APP_MotorStartup_SyncRound_Fail(APP_SYNC_FAILURE_POSITION, MID_CANOPEN_ERROR);
         break;
       }
       else
@@ -1422,7 +1434,7 @@ void APP_MotorStartup_SyncRoundProcess(const uint8_t *pNodeIds, uint8_t nodeCoun
       }
       else
       {
-        APP_SyncRound_NextWheel();
+        APP_MotorStartup_SyncRound_NextWheel();
       }
       break;
     case APP_SYNC_PHASE_WRITE_SPEED:
@@ -1497,7 +1509,7 @@ void APP_MotorStartup_SyncRoundProcess(const uint8_t *pNodeIds, uint8_t nodeCoun
     if ((status != MID_CANOPEN_OK) && (phase < APP_SYNC_PHASE_STOP_SEND))
     {
       s_syncRound.wheelIndex = (uint8_t) (pWheel - s_syncRound.wheels);
-      APP_SyncRound_Fail(APP_SYNC_FAILURE_SDO, status);
+      APP_MotorStartup_SyncRound_Fail(APP_SYNC_FAILURE_SDO, status);
     }
     if ((s_syncRound.result == APP_MOTOR_RESULT_FAILED) && (s_syncRound.failedPhase == phase))
     {
@@ -1505,8 +1517,6 @@ void APP_MotorStartup_SyncRoundProcess(const uint8_t *pNodeIds, uint8_t nodeCoun
     }
   }
   g_motorSyncDebug = s_syncRound;
-#else
-  (void) pNodeIds;
-  (void) nodeCount;
-#endif
 }
+#endif
+

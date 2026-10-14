@@ -65,8 +65,8 @@ extern "C" {
   */
 typedef struct
 {
-  int32_t leftSpeed;   /**< 左轮目标速度。 */
-  int32_t rightSpeed;  /**< 右轮目标速度。 */
+  int32_t leftSpeed;   /**< 左轮目标转速，单位转每分，由链路层换算成 60FFh 的脉冲每秒。 */
+  int32_t rightSpeed;  /**< 右轮目标转速，单位转每分，由链路层换算成 60FFh 的脉冲每秒。 */
 } MID_ChassisPayloadTypeDef;
 
 /**

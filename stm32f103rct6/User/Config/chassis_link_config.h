@@ -52,6 +52,17 @@
 #define CHASSIS_LINK_POSITION_GAP_MS 1000U
 /** @} */
 
+/** @defgroup CHASSIS_LINK_Motor_Debug 启动诊断记录开关
+ * @{
+ */
+#ifndef CHASSIS_LINK_MOTOR_DEBUG_ENABLE
+#define CHASSIS_LINK_MOTOR_DEBUG_ENABLE 0U
+#endif
+/** @} */
+
+/* 双轮同时速度测试：自检开启且未走位置测试时生效，与一圈测试、位置测试互斥。 */
+#define CHASSIS_LINK_SPIN_TEST_ACTIVE ((CHASSIS_LINK_SELF_TEST_ENABLE == 1U) && !CHASSIS_LINK_POSITION_TEST_ACTIVE)
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -104,8 +115,9 @@ extern "C" {
    下限与上限取相同值时目标速度恒定，不再爬坡。
    只写目标速度对象 0x60FF，不依赖位置反馈，轮子悬空与落地运行方式相同。
    开启 SYNC_ROUND 时恢复双轮同转一圈、按位置反馈停车的一圈测试。
-   自检节点与轮节点取并集，总数不得超过 CANOPEN_MAX_NODE_COUNT。 */
-#define CHASSIS_LINK_SELF_TEST_ENABLE      1U   /**< 自检点动开关，1 开启；开启后上电即依次点动自检节点，不依赖上位机帧。 */
+   自检节点与轮节点取并集，总数不得超过 CANOPEN_MAX_NODE_COUNT。
+   置 0 关闭全部上电自检，走上位机串口控制，此时本组参数不参与编译。 */
+#define CHASSIS_LINK_SELF_TEST_ENABLE      0U   /**< 自检点动开关，1 开启；开启后上电即依次点动自检节点，不依赖上位机帧。 */
 #define CHASSIS_LINK_SELF_TEST_NODE_ID_LIST { 1U, 2U } /**< 自检节点地址组，数组内节点同时转动，地址不得为 0。 */
 #define CHASSIS_LINK_SELF_TEST_NODE_COUNT  2U   /**< 自检节点个数，必须与 CHASSIS_LINK_SELF_TEST_NODE_ID_LIST 元素个数一致。 */
 #define CHASSIS_LINK_SELF_TEST_SPEED_PPS   2000 /**< 速度上限，单位脉冲每秒，正负表示方向。 */
@@ -121,11 +133,12 @@ extern "C" {
   * @defgroup CHASSIS_LINK_Speed_Config 目标转速配置
   * @{
   */
-#define CHASSIS_LINK_SPEED_LIMIT_PPS              200000 /**< 目标转速绝对值上限，单位脉冲每秒，超出即判定帧非法并丢弃，取值待实测确认。 */
+#define CHASSIS_LINK_SPEED_LIMIT_RPM              100    /**< 上位机帧内轮子转速绝对值上限，单位转每分，超出即判定帧非法并丢弃，需与上位机 rpm_limit 一致。 */
 #define CHASSIS_LINK_SPEED_DEADBAND_PPS           10     /**< 转速变化死区，单位脉冲每秒，与上次下发值之差不超过该值时不重复下发。 */
 #define CHASSIS_LINK_REFRESH_PERIOD_MS            100U   /**< 强制刷新周期，单位毫秒，转速未变也重发一次，防止偶发丢帧后长期停在旧值。 */
-#define CHASSIS_LINK_SPEED_INVERT_LEFT            1U     /**< 左轮方向取反标志，1 取反，0 不取反。 */
-#define CHASSIS_LINK_SPEED_INVERT_RIGHT           0U     /**< 右轮方向取反标志，1 取反，0 不取反。 */
+#define CHASSIS_LINK_SPEED_INVERT_LEFT            1U     /**< 左轮方向取反标志，1 取反，0 不取反；与上位机 left_direction 只能在一侧取反。 */
+#define CHASSIS_LINK_SPEED_INVERT_RIGHT           0U     /**< 右轮方向取反标志，1 取反，0 不取反；与上位机 right_direction 只能在一侧取反。 */
+#define CHASSIS_LINK_PULSES_PER_MOTOR_REV_DEFAULT 4000   /**< 2001h 读取失败时使用的电机每圈脉冲数默认值，需与驱动器细分一致。 */
 /**
   * @}
   */

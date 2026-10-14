@@ -1,16 +1,25 @@
 /**
- ******************************************************************************
- * @file    app_motor_startup.h
- * @brief   电机启动命令与读回验证记录。
- * @author  muhuangan
- * @date    2026-10-13
- * @version V1.0.0
- ******************************************************************************
- * @attention
- * Copyright 2026 muhuangan.
- * This software is licensed under the MIT License in the project LICENSE file.
- ******************************************************************************
- */
+  ******************************************************************************
+  * @file    app_motor_startup.h
+  * @brief   电机启动流程与上电自检接口。
+  * @author  muhuangan
+  * @date    2026-10-13
+  * @version V1.0.0
+  ******************************************************************************
+  * @attention
+  *
+  * Copyright 2026 muhuangan.
+  * All rights reserved.
+  *
+  * This software is licensed under terms that can be found in the LICENSE file
+  * in the root directory of this software component.
+  *
+  * 本模块负责把每个轮节点从等心跳、起网络、设模式与轮廓参数到使能逐步推到可下发速度的状态，
+  * 每一步都读回对象并核对驱动器状态字，未达标不进入下一步；位置点动、速度点动与双轮一圈自检
+  * 由同文件的三个 Process 入口实现，均受 chassis_link_config.h 的开关控制，关闭时不参与编译。
+  *
+  ******************************************************************************
+  */
 #ifndef __APP_MOTOR_STARTUP_H
 #define __APP_MOTOR_STARTUP_H
 
@@ -93,16 +102,19 @@ extern "C"
     APP_MotorStartupStepTypeDef  currentStep;
     APP_MotorStartupStepTypeDef  failedStep;
     uint32_t                     failureCount;
+#if (CHASSIS_LINK_MOTOR_DEBUG_ENABLE == 1U)
     APP_MotorCommandDebugTypeDef lastFailure;
     APP_MotorCommandDebugTypeDef firstSteps[APP_MOTOR_STEP_COUNT];
     APP_MotorCommandDebugTypeDef latestSteps[APP_MOTOR_STEP_COUNT];
     APP_MotorCommandDebugTypeDef latest;
     APP_MotorCommandDebugTypeDef firstStart;
     APP_MotorCommandDebugTypeDef firstStop;
+#endif
   } APP_MotorStartupDebugTypeDef;
 
   extern volatile APP_MotorStartupDebugTypeDef g_motorStartupDebug[CANOPEN_MAX_NODE_COUNT];
 
+#if CHASSIS_LINK_POSITION_TEST_ACTIVE
 /** @defgroup APP_POSITION_TEST_Phase 位置点动阶段
  * @{
  */
@@ -162,7 +174,9 @@ extern "C"
 
   extern volatile APP_PositionTestDebugTypeDef g_motorPositionDebug[CANOPEN_MAX_NODE_COUNT];
   void                                         APP_MotorStartup_PositionTestProcess(void);
+#endif
 
+#if (CHASSIS_LINK_SPIN_TEST_ACTIVE == 1)
   /** @defgroup APP_VELOCITY_TEST_Command 速度测试命令顺序
    * @{
    */
@@ -204,7 +218,9 @@ extern "C"
   } APP_VelocityTestDebugTypeDef;
   extern volatile APP_VelocityTestDebugTypeDef g_motorVelocityDebug[CANOPEN_MAX_NODE_COUNT];
   void APP_MotorStartup_VelocityTestProcess(const uint8_t *pNodeIds, uint8_t nodeCount);
+#endif
 
+#if CHASSIS_LINK_SYNC_ROUND_ACTIVE
 /** @defgroup APP_SYNC_ROUND_Phase 双轮一圈阶段
  * @{
  */
@@ -285,11 +301,14 @@ extern "C"
   } APP_SyncRoundDebugTypeDef;
   extern volatile APP_SyncRoundDebugTypeDef g_motorSyncDebug;
   void APP_MotorStartup_SyncRoundProcess(const uint8_t *pNodeIds, uint8_t nodeCount);
+#endif
 
   MID_CANopenStatusTypeDef      APP_MotorStartup_AddNode(uint8_t nodeId);
   void                          APP_MotorStartup_Process(void);
   bool                          APP_MotorStartup_IsReady(uint8_t nodeId);
+#if (CHASSIS_LINK_SPIN_TEST_ACTIVE == 1) || (CHASSIS_LINK_SYNC_ROUND_ACTIVE == 1)
   MID_CANopenStatusTypeDef      APP_MotorStartup_RequestVelocity(uint8_t nodeId, int32_t velocity);
+#endif
   APP_MotorCommandResultTypeDef APP_MotorStartup_GetMotionResult(uint8_t nodeId);
 
 #ifdef __cplusplus

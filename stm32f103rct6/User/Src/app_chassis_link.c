@@ -80,24 +80,7 @@ static volatile uint32_t s_commLostCount = 0U;           /**< 通信超时触发
 /* 自检节点地址组，顺序由 CHASSIS_LINK_SELF_TEST_NODE_ID_LIST 决定，点动时按下标依次轮转。 */
 static const uint8_t s_selfTestNodeIds[CHASSIS_LINK_SELF_TEST_NODE_COUNT] = CHASSIS_LINK_SELF_TEST_NODE_ID_LIST;
 
-#if !CHASSIS_LINK_POSITION_TEST_ACTIVE
-/** @defgroup APP_CHASSIS_LINK_SelfTest_Phase 自检相位
-  * @{
-  */
-typedef enum
-{
-  APP_CHASSIS_SELF_TEST_START = 0U,
-  APP_CHASSIS_SELF_TEST_WAIT_START,
-  APP_CHASSIS_SELF_TEST_RUN,
-  APP_CHASSIS_SELF_TEST_STOP,
-  APP_CHASSIS_SELF_TEST_WAIT_STOP,
-  APP_CHASSIS_SELF_TEST_GAP
-} APP_ChassisSelfTestPhaseTypeDef;
-/** @} */
-static APP_ChassisSelfTestPhaseTypeDef s_selfTestPhase = APP_CHASSIS_SELF_TEST_START;
-static uint8_t s_selfTestActiveIndex = 0U;
-static uint32_t s_selfTestPhaseTick = 0U;
-#endif
+
 
 #endif
 
@@ -113,7 +96,7 @@ static void APP_ChassisLink_SendSpeeds(int32_t leftSpeed, int32_t rightSpeed);
 #if (CHASSIS_LINK_SELF_TEST_ENABLE == 0U)
 static void APP_ChassisLink_SendOneWheel(uint8_t wheelIndex, int32_t speed);
 #endif
-#if !CHASSIS_LINK_POSITION_TEST_ACTIVE
+#if (CHASSIS_LINK_SELF_TEST_ENABLE == 0U)
 static void APP_ChassisLink_RecordFailure(uint8_t nodeId);
 #endif
 static int32_t APP_ChassisLink_ApplyInvert(int32_t speed, uint32_t invertFlag);
@@ -183,7 +166,7 @@ static bool APP_ChassisLink_IsCommunicationLost(uint32_t currentTick)
   * @note   失败计数累加，并把该节点最近一次的 SDO 中止码拷入 s_lastSdoAbortCode，
   *         便于通过统计快照定位失败原因。
   */
-#if !CHASSIS_LINK_POSITION_TEST_ACTIVE
+#if (CHASSIS_LINK_SELF_TEST_ENABLE == 0U)
 static void APP_ChassisLink_RecordFailure(uint8_t nodeId)
 {
   MID_CANopenNodeTypeDef *pNode = MID_CANopen_GetNode(nodeId);
@@ -329,7 +312,7 @@ static void APP_ChassisLink_EnsureDriveReady(void)
 #if (CHASSIS_LINK_SELF_TEST_ENABLE == 1U)
 /**
   * @brief  根据配置推进有限位置点动或速度自检，停稳后才切换另一轮。
-  * @note   位置测试逐轮正反各一次；速度自检按已验证的起转和停止状态循环。
+  * @note   位置和速度测试都逐轮正反各一次，实际停止确认后才换方向或节点。
   *         自检期间不执行上位机速度下发，避免两个流程覆盖目标速度。
   */
 static void APP_ChassisLink_RunSelfTest(void)
@@ -337,85 +320,7 @@ static void APP_ChassisLink_RunSelfTest(void)
 #if CHASSIS_LINK_POSITION_TEST_ACTIVE
   APP_MotorStartup_PositionTestProcess();
 #else
-  uint32_t currentTick = HAL_GetTick();
-  uint8_t nodeId = s_selfTestNodeIds[s_selfTestActiveIndex];
-  APP_MotorCommandResultTypeDef result = APP_MotorStartup_GetMotionResult(nodeId);
-  MID_CANopenStatusTypeDef status = MID_CANOPEN_OK;
-
-  if (!APP_MotorStartup_IsReady(nodeId))
-  {
-    if (s_selfTestPhase == APP_CHASSIS_SELF_TEST_START)
-    {
-      s_selfTestActiveIndex = (uint8_t)((s_selfTestActiveIndex + 1U) % CHASSIS_LINK_SELF_TEST_NODE_COUNT);
-    }
-    return;
-  }
-  switch (s_selfTestPhase)
-  {
-    case APP_CHASSIS_SELF_TEST_START:
-      status = APP_MotorStartup_RequestVelocity(nodeId, CHASSIS_LINK_SELF_TEST_SPEED_PPS);
-      if (status == MID_CANOPEN_OK)
-      {
-        s_selfTestPhase = APP_CHASSIS_SELF_TEST_WAIT_START;
-      }
-      break;
-    case APP_CHASSIS_SELF_TEST_WAIT_START:
-      if (result == APP_MOTOR_RESULT_VERIFIED)
-      {
-        s_selfTestPhaseTick = currentTick;
-        s_selfTestPhase = APP_CHASSIS_SELF_TEST_RUN;
-      }
-      else if (result == APP_MOTOR_RESULT_FAILED)
-      {
-        APP_ChassisLink_RecordFailure(nodeId);
-        s_selfTestPhaseTick = currentTick - CHASSIS_LINK_DRIVE_RETRY_PERIOD_MS;
-        s_selfTestPhase = APP_CHASSIS_SELF_TEST_STOP;
-      }
-      break;
-    case APP_CHASSIS_SELF_TEST_RUN:
-      if ((currentTick - s_selfTestPhaseTick) >= CHASSIS_LINK_SELF_TEST_ON_MS)
-      {
-        s_selfTestPhase = APP_CHASSIS_SELF_TEST_STOP;
-      }
-      break;
-    case APP_CHASSIS_SELF_TEST_STOP:
-      if ((currentTick - s_selfTestPhaseTick) >= CHASSIS_LINK_DRIVE_RETRY_PERIOD_MS)
-      {
-        status = APP_MotorStartup_RequestVelocity(nodeId, 0);
-        if (status == MID_CANOPEN_OK)
-        {
-          s_selfTestPhase = APP_CHASSIS_SELF_TEST_WAIT_STOP;
-        }
-      }
-      break;
-    case APP_CHASSIS_SELF_TEST_WAIT_STOP:
-      if (result == APP_MOTOR_RESULT_VERIFIED)
-      {
-        s_selfTestPhaseTick = currentTick;
-        s_selfTestPhase = APP_CHASSIS_SELF_TEST_GAP;
-      }
-      else if (result == APP_MOTOR_RESULT_FAILED)
-      {
-        APP_ChassisLink_RecordFailure(nodeId);
-        s_selfTestPhaseTick = currentTick;
-        s_selfTestPhase = APP_CHASSIS_SELF_TEST_STOP;
-      }
-      break;
-    case APP_CHASSIS_SELF_TEST_GAP:
-      if ((currentTick - s_selfTestPhaseTick) >= CHASSIS_LINK_SELF_TEST_OFF_MS)
-      {
-        s_selfTestActiveIndex = (uint8_t)((s_selfTestActiveIndex + 1U) % CHASSIS_LINK_SELF_TEST_NODE_COUNT);
-        s_selfTestPhase = APP_CHASSIS_SELF_TEST_START;
-      }
-      break;
-    default:
-      s_selfTestPhase = APP_CHASSIS_SELF_TEST_STOP;
-      break;
-  }
-  if ((status != MID_CANOPEN_OK) && (status != MID_CANOPEN_BUSY))
-  {
-    APP_ChassisLink_RecordFailure(nodeId);
-  }
+  APP_MotorStartup_VelocityTestProcess(s_selfTestNodeIds, CHASSIS_LINK_SELF_TEST_NODE_COUNT);
 #endif
 }
 #endif

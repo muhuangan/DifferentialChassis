@@ -841,3 +841,179 @@ void APP_MotorStartup_PositionTestProcess(void)
   g_motorPositionDebug[index] = *pTest;
 #endif
 }
+
+volatile APP_VelocityTestDebugTypeDef g_motorVelocityDebug[CANOPEN_MAX_NODE_COUNT];
+
+#if (CHASSIS_LINK_SELF_TEST_ENABLE == 1U) && !CHASSIS_LINK_POSITION_TEST_ACTIVE
+static APP_VelocityTestDebugTypeDef s_velocityTests[CANOPEN_MAX_NODE_COUNT];
+static uint8_t                      s_velocityActive = CANOPEN_MAX_NODE_COUNT;
+static uint32_t                     s_velocityNextTick;
+
+/**
+ * @brief 保存首个失败的完整反馈，并结束正常测试序列。
+ * @note 后续只尝试零速命令，实际停稳前不换方向或切换到另一节点。
+ */
+static void APP_VelocityTest_Fail(APP_VelocityTestDebugTypeDef *pTest, const APP_MotorCommandDebugTypeDef *pRecord)
+{
+  if (!pTest->hasFailure)
+  {
+    pTest->firstFailure = *pRecord;
+    pTest->hasFailure = true;
+  }
+  pTest->result = APP_MOTOR_RESULT_FAILED;
+  pTest->phase = APP_VELOCITY_PHASE_RETRY_STOP;
+  s_velocityNextTick = HAL_GetTick() - CHASSIS_LINK_DRIVE_RETRY_PERIOD_MS;
+}
+#endif
+
+/**
+ * @brief 对已就绪的指定节点逐轮执行正转、停止、反转、停止各一次。
+ * @note 先排入命令再等待实际速度验证，起转确认后保持配置时长，停止确认后等待间隔。
+ *       命令失败即锁存并只重试停止；每节点完成或失败后不重新运行。
+ */
+void APP_MotorStartup_VelocityTestProcess(const uint8_t *pNodeIds, uint8_t nodeCount)
+{
+#if (CHASSIS_LINK_SELF_TEST_ENABLE == 1U) && !CHASSIS_LINK_POSITION_TEST_ACTIVE
+  APP_VelocityTestDebugTypeDef *pTest;
+  APP_MotorCommandDebugTypeDef  record;
+  APP_MotorCommandResultTypeDef result;
+  MID_CANopenStatusTypeDef      status;
+  int32_t                       target = 0;
+  uint32_t                      now = HAL_GetTick();
+  uint8_t                       index;
+  uint8_t                       nodeIndex;
+  if ((pNodeIds == NULL) || (nodeCount == 0U) || (nodeCount > CANOPEN_MAX_NODE_COUNT))
+  {
+    return;
+  }
+  if (s_velocityActive >= CANOPEN_MAX_NODE_COUNT)
+  {
+    for (nodeIndex = 0U; nodeIndex < nodeCount; nodeIndex++)
+    {
+      index = APP_MotorStartup_FindNode(pNodeIds[nodeIndex]);
+      if ((index < CANOPEN_MAX_NODE_COUNT) && g_motorStartupDebug[index].isReady &&
+          (s_velocityTests[index].result == APP_MOTOR_RESULT_NOT_RUN))
+      {
+        s_velocityActive = index;
+        s_velocityTests[index].nodeId = pNodeIds[nodeIndex];
+        s_velocityTests[index].result = APP_MOTOR_RESULT_PENDING;
+        s_velocityTests[index].phase = APP_VELOCITY_PHASE_QUEUE;
+        break;
+      }
+    }
+    if (s_velocityActive >= CANOPEN_MAX_NODE_COUNT)
+    {
+      return;
+    }
+  }
+  index = s_velocityActive;
+  pTest = &s_velocityTests[index];
+  result = APP_MotorStartup_GetMotionResult(pTest->nodeId);
+  switch (pTest->phase)
+  {
+    case APP_VELOCITY_PHASE_QUEUE:
+      if (pTest->commandIndex == APP_VELOCITY_COMMAND_FORWARD)
+      {
+        target = CHASSIS_LINK_SELF_TEST_SPEED_PPS;
+      }
+      else if (pTest->commandIndex == APP_VELOCITY_COMMAND_REVERSE)
+      {
+        target = -CHASSIS_LINK_SELF_TEST_SPEED_PPS;
+      }
+      status = APP_MotorStartup_RequestVelocity(pTest->nodeId, target);
+      if (status == MID_CANOPEN_OK)
+      {
+        pTest->commands[pTest->commandIndex] = g_motorStartupDebug[index].latest;
+        pTest->phase = APP_VELOCITY_PHASE_WAIT;
+      }
+      else if (status != MID_CANOPEN_BUSY)
+      {
+        (void) memset(&record, 0, sizeof(record));
+        record.step = APP_MOTOR_STEP_MOTION;
+        record.result = APP_MOTOR_RESULT_FAILED;
+        record.startTick = now;
+        record.endTick = now;
+        record.objectIndex = MID_CANOPEN_OD_TARGET_VELOCITY;
+        record.commandValue = target;
+        record.commandStatus = status;
+        record.statusReadStatus = MID_CANOPEN_NOT_READY;
+        record.verifyReadStatus = MID_CANOPEN_NOT_READY;
+        record.velocityReadStatus = MID_CANOPEN_NOT_READY;
+        record.errorReadStatus = MID_CANOPEN_NOT_READY;
+        pTest->commands[pTest->commandIndex] = record;
+        APP_VelocityTest_Fail(pTest, &record);
+      }
+      break;
+    case APP_VELOCITY_PHASE_WAIT:
+      pTest->commands[pTest->commandIndex] = g_motorStartupDebug[index].latest;
+      if (result == APP_MOTOR_RESULT_VERIFIED)
+      {
+        s_velocityNextTick = now;
+        pTest->phase = ((pTest->commandIndex == APP_VELOCITY_COMMAND_FORWARD) ||
+                        (pTest->commandIndex == APP_VELOCITY_COMMAND_REVERSE))
+                           ? APP_VELOCITY_PHASE_HOLD
+                           : APP_VELOCITY_PHASE_GAP;
+      }
+      else if (result == APP_MOTOR_RESULT_FAILED)
+      {
+        record = pTest->commands[pTest->commandIndex];
+        APP_VelocityTest_Fail(pTest, &record);
+      }
+      break;
+    case APP_VELOCITY_PHASE_HOLD:
+      if ((now - s_velocityNextTick) >= CHASSIS_LINK_SELF_TEST_ON_MS)
+      {
+        pTest->commandIndex = (APP_VelocityCommandTypeDef) (pTest->commandIndex + 1U);
+        pTest->phase = APP_VELOCITY_PHASE_QUEUE;
+      }
+      break;
+    case APP_VELOCITY_PHASE_GAP:
+      if ((now - s_velocityNextTick) >= CHASSIS_LINK_SELF_TEST_OFF_MS)
+      {
+        if (pTest->commandIndex == APP_VELOCITY_COMMAND_STOP_REVERSE)
+        {
+          pTest->result = APP_MOTOR_RESULT_VERIFIED;
+          pTest->phase = APP_VELOCITY_PHASE_DONE;
+          s_velocityActive = CANOPEN_MAX_NODE_COUNT;
+        }
+        else
+        {
+          pTest->commandIndex = (APP_VelocityCommandTypeDef) (pTest->commandIndex + 1U);
+          pTest->phase = APP_VELOCITY_PHASE_QUEUE;
+        }
+      }
+      break;
+    case APP_VELOCITY_PHASE_RETRY_STOP:
+      if ((now - s_velocityNextTick) >= CHASSIS_LINK_DRIVE_RETRY_PERIOD_MS)
+      {
+        s_velocityNextTick = now;
+        pTest->stopRetryCount++;
+        status = APP_MotorStartup_RequestVelocity(pTest->nodeId, 0);
+        if (status == MID_CANOPEN_OK)
+        {
+          pTest->phase = APP_VELOCITY_PHASE_WAIT_STOP;
+        }
+      }
+      break;
+    case APP_VELOCITY_PHASE_WAIT_STOP:
+      if (result == APP_MOTOR_RESULT_VERIFIED)
+      {
+        pTest->haltConfirmed = true;
+        pTest->phase = APP_VELOCITY_PHASE_DONE;
+        s_velocityActive = CANOPEN_MAX_NODE_COUNT;
+      }
+      else if (result == APP_MOTOR_RESULT_FAILED)
+      {
+        s_velocityNextTick = now;
+        pTest->phase = APP_VELOCITY_PHASE_RETRY_STOP;
+      }
+      break;
+    default:
+      break;
+  }
+  g_motorVelocityDebug[index] = *pTest;
+#else
+  (void) pNodeIds;
+  (void) nodeCount;
+#endif
+}

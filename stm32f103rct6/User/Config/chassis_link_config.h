@@ -24,7 +24,7 @@
  * @{
  */
 #ifndef CHASSIS_LINK_POSITION_TEST_ENABLE
-#define CHASSIS_LINK_POSITION_TEST_ENABLE 1U
+#define CHASSIS_LINK_POSITION_TEST_ENABLE 0U
 #endif
 #define CHASSIS_LINK_POSITION_TEST_ACTIVE ((CHASSIS_LINK_POSITION_TEST_ENABLE == 1U) && (CHASSIS_LINK_SELF_TEST_ENABLE == 1U))
 #define CHASSIS_LINK_POSITION_DISTANCE_PULSES 200
@@ -81,18 +81,15 @@ extern "C" {
   * @defgroup CHASSIS_LINK_SelfTest_Config 自检点动配置
   * @{
   */
-/* 用法：把 CHASSIS_LINK_SELF_TEST_ENABLE 置 1 后编译烧录，上电即按 CHASSIS_LINK_SELF_TEST_NODE_ID_LIST 的顺序依次点动：
-   当前节点以 CHASSIS_LINK_SELF_TEST_SPEED_PPS 转动 CHASSIS_LINK_SELF_TEST_ON_MS，再停 CHASSIS_LINK_SELF_TEST_OFF_MS，
-   随后轮到下一个节点，整个地址组走完从头循环。一次上电即可看清每个节点地址对应哪个轮子，同时验证全部驱动器的
-   通信、使能与接线；确认后把开关改回 0 即恢复正常链路。
-   注意自检节点会自动并入上电注册的节点列表（与 CHASSIS_LINK_WHEEL_NODE_ID_LIST 取并集），节点地址不得为 0，
-   并集总数不得超过 CANOPEN_MAX_NODE_COUNT（默认 4），否则注册失败导致所有 SDO 超时。 */
+/* 速度自检对已就绪节点依次执行正转、停止、反转、停止，每节点上电只测试一次。
+   起转确认后保持 ON_MS，停稳确认后等待 OFF_MS；失败时只重试停止。
+   自检节点与轮节点取并集，总数不得超过 CANOPEN_MAX_NODE_COUNT。 */
 #define CHASSIS_LINK_SELF_TEST_ENABLE      1U   /**< 自检点动开关，1 开启；开启后上电即依次点动自检节点，不依赖上位机帧。 */
 #define CHASSIS_LINK_SELF_TEST_NODE_ID_LIST { 1U, 2U } /**< 自检节点地址组，按下标顺序依次点动，地址不得为 0。 */
 #define CHASSIS_LINK_SELF_TEST_NODE_COUNT  2U   /**< 自检节点个数，必须与 CHASSIS_LINK_SELF_TEST_NODE_ID_LIST 元素个数一致。 */
-#define CHASSIS_LINK_SELF_TEST_SPEED_PPS   5000 /**< 自检点动转速，单位脉冲每秒，符号表示方向。 */
-#define CHASSIS_LINK_SELF_TEST_ON_MS       2000U /**< 单个自检节点的转动时长，单位毫秒。 */
-#define CHASSIS_LINK_SELF_TEST_OFF_MS      1000U /**< 相邻两个自检节点之间的停止时长，单位毫秒。 */
+#define CHASSIS_LINK_SELF_TEST_SPEED_PPS   500 /**< 自检点动转速，单位脉冲每秒，符号表示方向。 */
+#define CHASSIS_LINK_SELF_TEST_ON_MS       2000U /**< 每个方向到速确认后的保持时长，单位毫秒。 */
+#define CHASSIS_LINK_SELF_TEST_OFF_MS      1000U /**< 停稳确认后换方向或节点的间隔，单位毫秒。 */
 /**
   * @}
   */
@@ -125,8 +122,8 @@ extern "C" {
   * @{
   */
 #define CHASSIS_LINK_ENABLE_PROFILE_RAMP          1U      /**< 1 处理加减速度，位置测试读取现有正值，速度模式写入配置值；0 跳过。 */
-#define CHASSIS_LINK_PROFILE_ACCELERATION_PPS2    10000U  /**< 轮廓加速度，单位脉冲每平方秒，仅在开启写入时生效。手册 PP/PV 示例用 2000 或 30000，此处取中间值。 */
-#define CHASSIS_LINK_PROFILE_DECELERATION_PPS2    10000U  /**< 轮廓减速度，单位脉冲每平方秒，仅在开启写入时生效，取值待实测确认。 */
+#define CHASSIS_LINK_PROFILE_ACCELERATION_PPS2    1000U  /**< 速度模式轮廓加速度，单位脉冲每平方秒，仅在开启写入时生效。 */
+#define CHASSIS_LINK_PROFILE_DECELERATION_PPS2    1000U  /**< 轮廓减速度，单位脉冲每平方秒，仅在开启写入时生效，取值待实测确认。 */
 /**
   * @}
   */

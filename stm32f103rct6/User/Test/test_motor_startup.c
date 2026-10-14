@@ -51,6 +51,10 @@ typedef struct
   uint32_t               triggerCount;
   uint32_t               rampWriteCount;
   uint32_t               velocityWriteCount;
+  uint32_t               nonzeroVelocityWrites;
+  uint32_t               negativeVelocityWrites;
+  uint32_t               positionWriteCount;
+  bool                   freezeVelocity;
   bool                   freezePosition;
   bool                   loseTriggerAck;
   bool                   rejectTarget;
@@ -244,6 +248,7 @@ MID_CANopenStatusTypeDef MID_CANopen_Sdo_WriteI32(uint8_t id, uint16_t object, u
   pDrive->commandCount++;
   if (object == MID_CANOPEN_OD_TARGET_POSITION)
   {
+    pDrive->positionWriteCount++;
     if (pDrive->rejectTarget && (value != 0))
     {
       return MID_CANOPEN_ABORTED;
@@ -252,8 +257,19 @@ MID_CANopenStatusTypeDef MID_CANopen_Sdo_WriteI32(uint8_t id, uint16_t object, u
     return MID_CANOPEN_OK;
   }
   pDrive->velocityWriteCount++;
+  if (value != 0)
+  {
+    pDrive->nonzeroVelocityWrites++;
+  }
+  if (value < 0)
+  {
+    pDrive->negativeVelocityWrites++;
+  }
   pDrive->targetVelocity = value;
-  pDrive->actualVelocity = value;
+  if (!pDrive->freezeVelocity || (value == 0))
+  {
+    pDrive->actualVelocity = value;
+  }
   return MID_CANOPEN_OK;
 }
 MID_CANopenStatusTypeDef MID_CANopen_Sdo_ReadU16(uint8_t id, uint16_t object, uint8_t sub, uint16_t *pValue)

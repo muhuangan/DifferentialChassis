@@ -163,6 +163,48 @@ extern "C"
   extern volatile APP_PositionTestDebugTypeDef g_motorPositionDebug[CANOPEN_MAX_NODE_COUNT];
   void                                         APP_MotorStartup_PositionTestProcess(void);
 
+  /** @defgroup APP_VELOCITY_TEST_Command 速度测试命令顺序
+   * @{
+   */
+  typedef enum
+  {
+    APP_VELOCITY_COMMAND_FORWARD = 0U,
+    APP_VELOCITY_COMMAND_STOP_FORWARD,
+    APP_VELOCITY_COMMAND_REVERSE,
+    APP_VELOCITY_COMMAND_STOP_REVERSE,
+    APP_VELOCITY_COMMAND_COUNT
+  } APP_VelocityCommandTypeDef;
+  /** @} */
+  /** @defgroup APP_VELOCITY_TEST_Phase 速度点动阶段
+   * @{
+   */
+  typedef enum
+  {
+    APP_VELOCITY_PHASE_QUEUE = 0U,
+    APP_VELOCITY_PHASE_WAIT,
+    APP_VELOCITY_PHASE_HOLD,
+    APP_VELOCITY_PHASE_GAP,
+    APP_VELOCITY_PHASE_RETRY_STOP,
+    APP_VELOCITY_PHASE_WAIT_STOP,
+    APP_VELOCITY_PHASE_DONE
+  } APP_VelocityPhaseTypeDef;
+  /** @} */
+  /** @brief 保留四条速度指令的最终验证结果，首次失败不被停止重试覆盖。 */
+  typedef struct
+  {
+    uint8_t                       nodeId;
+    APP_VelocityCommandTypeDef    commandIndex;
+    APP_VelocityPhaseTypeDef      phase;
+    APP_MotorCommandResultTypeDef result;
+    bool                          hasFailure;
+    bool                          haltConfirmed;
+    uint32_t                      stopRetryCount;
+    APP_MotorCommandDebugTypeDef  firstFailure;
+    APP_MotorCommandDebugTypeDef  commands[APP_VELOCITY_COMMAND_COUNT];
+  } APP_VelocityTestDebugTypeDef;
+  extern volatile APP_VelocityTestDebugTypeDef g_motorVelocityDebug[CANOPEN_MAX_NODE_COUNT];
+  void APP_MotorStartup_VelocityTestProcess(const uint8_t *pNodeIds, uint8_t nodeCount);
+
   MID_CANopenStatusTypeDef      APP_MotorStartup_AddNode(uint8_t nodeId);
   void                          APP_MotorStartup_Process(void);
   bool                          APP_MotorStartup_IsReady(uint8_t nodeId);

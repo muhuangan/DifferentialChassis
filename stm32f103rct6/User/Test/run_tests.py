@@ -17,14 +17,17 @@ suites = {
     'test_motor_startup': ['app_motor_startup.c', 'mid_lisan_ec.c'],
     'test_canopen_sdo': ['mid_canopen.c'],
     'test_position_test': ['app_motor_startup.c', 'mid_lisan_ec.c'],
+    'test_velocity_test': ['app_motor_startup.c', 'mid_lisan_ec.c'],
 }
 with tempfile.TemporaryDirectory(prefix='chassis_tests_') as directory:
     for name, sources in suites.items():
         exe = pathlib.Path(directory) / (name + '.exe')
-        mode_flags = [] if name == 'test_position_test' else ['-DCHASSIS_LINK_POSITION_TEST_ENABLE=0']
+        mode_flags = ['-DCHASSIS_LINK_POSITION_TEST_ENABLE=1'] if name == 'test_position_test' else ['-DCHASSIS_LINK_POSITION_TEST_ENABLE=0']
         subprocess.run([args.cc, *flags, *mode_flags, str(tests / (name + '.c')),
                         *(str(root / 'User/Src' / source) for source in sources),
                         '-Wl,--gc-sections', '-o', str(exe)], check=True)
         cases = ['normal', 'no_motion', 'lost_ack', 'rejected', 'read_failure', 'halt_failure', 'zero_ramp'] if name == 'test_position_test' else ['']
+        if name == 'test_velocity_test':
+            cases = ['normal', 'no_motion', 'stop_failure', 'fault', 'read_failure', 'missing_node']
         for case in cases:
             subprocess.run([str(exe), case], check=True, timeout=30)

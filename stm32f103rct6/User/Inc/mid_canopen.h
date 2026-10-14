@@ -75,8 +75,9 @@ extern "C" {
   * @defgroup MID_CANOPEN_SDO_Command CANopen SDO Command Specifier
   * @{
   */
+#define MID_CANOPEN_SDO_EXPEDITED_FLAGS      0x03U   /**< 加速传输及显式数据长度标志，e=1、s=1。 */
 #define MID_CANOPEN_SDO_CCS_MASK             0xE0U   /**< 命令代码掩码。 */
-#define MID_CANOPEN_SDO_CCS_DOWNLOAD_EXPEDITED 0x20U /**< 加速下载请求。 */
+#define MID_CANOPEN_SDO_CCS_DOWNLOAD_EXPEDITED 0x23U /**< 四字节加速下载请求，包含 e=1、s=1。 */
 #define MID_CANOPEN_SDO_CCS_UPLOAD_REQUEST   0x40U   /**< 加速上传请求。 */
 #define MID_CANOPEN_SDO_SCS_DOWNLOAD_ACK     0x60U   /**< 下载应答。 */
 #define MID_CANOPEN_SDO_SCS_UPLOAD_RESPONSE  0x40U   /**< 上传应答。 */
@@ -197,21 +198,25 @@ typedef struct
 {
   uint8_t                     nodeId;                /**< 节点地址。 */
   bool                        isRegistered;          /**< 节点已注册标志。 */
-  bool                        isOnline;              /**< 心跳在线标志。 */
-  bool                        hasHeartbeat;          /**< 是否收到过心跳帧。 */
-  MID_CANopenNmtStateTypeDef  nmtState;              /**< 最近一次心跳上报的 NMT 状态。 */
-  uint32_t                    heartbeatTick;         /**< 最近一次心跳帧时间戳，单位毫秒。 */
-  uint32_t                    heartbeatCount;        /**< 心跳帧累计计数。 */
-  uint16_t                    lastEmcyCode;          /**< 最近一次紧急报文的错误代码。 */
-  uint32_t                    emcyCount;             /**< 紧急报文累计计数。 */
+  volatile bool                        isOnline;              /**< 心跳在线标志。 */
+  volatile bool                        hasHeartbeat;          /**< 是否收到过心跳帧。 */
+  volatile MID_CANopenNmtStateTypeDef  nmtState;              /**< 最近一次心跳上报的 NMT 状态。 */
+  volatile uint32_t                    heartbeatTick;         /**< 最近一次心跳帧时间戳，单位毫秒。 */
+  volatile uint32_t                    heartbeatCount;        /**< 心跳帧累计计数。 */
+  volatile uint16_t                    lastEmcyCode;          /**< 最近一次紧急报文的错误代码。 */
+  volatile uint32_t                    emcyCount;             /**< 紧急报文累计计数。 */
   uint32_t                    lastSdoAbortCode;      /**< 最近一次 SDO 中止码。 */
-  bool                        hasSdoResponse;        /**< SDO 应答到达标志。 */
-  uint32_t                    sdoResponseTick;       /**< SDO 应答到达时间戳，单位毫秒。 */
+  volatile bool                        hasSdoResponse;        /**< SDO 应答到达标志。 */
+  volatile uint32_t                    sdoResponseTick;       /**< SDO 应答到达时间戳，单位毫秒。 */
+  volatile bool               isSdoWaiting;          /**< 仅接收当前事务的完整匹配应答。 */
+  volatile uint16_t           sdoExpectedIndex;      /**< 当前等待对象的索引。 */
+  volatile uint8_t            sdoExpectedSubIndex;   /**< 当前等待对象的子索引。 */
+  volatile uint8_t            sdoExpectedCommand;    /**< 当前等待上传或下载应答类型。 */
   uint8_t                     sdoResponse[8];        /**< SDO 应答原始数据。 */
-  bool                        hasTpdo[MID_CANOPEN_PDO_COUNT];   /**< 各 TPDO 数据到达标志，索引 0 对应 TPDO1。 */
-  uint8_t                     tpdoLength[MID_CANOPEN_PDO_COUNT]; /**< 各 TPDO 数据长度，单位字节。 */
+  volatile bool                        hasTpdo[MID_CANOPEN_PDO_COUNT];   /**< 各 TPDO 数据到达标志，索引 0 对应 TPDO1。 */
+  volatile uint8_t                     tpdoLength[MID_CANOPEN_PDO_COUNT]; /**< 各 TPDO 数据长度，单位字节。 */
   uint8_t                     tpdoBuffer[MID_CANOPEN_PDO_COUNT][MID_CANOPEN_FRAME_DATA_SIZE_BYTES]; /**< 各 TPDO 数据缓存。 */
-  uint32_t                    tpdoTick[MID_CANOPEN_PDO_COUNT];   /**< 各 TPDO 到达时间戳，单位毫秒。 */
+  volatile uint32_t                    tpdoTick[MID_CANOPEN_PDO_COUNT];   /**< 各 TPDO 到达时间戳，单位毫秒。 */
 } MID_CANopenNodeTypeDef;
 
 /**

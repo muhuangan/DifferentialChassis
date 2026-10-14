@@ -20,6 +20,20 @@
 #ifndef __CHASSIS_LINK_CONFIG_H
 #define __CHASSIS_LINK_CONFIG_H
 
+/** @defgroup CHASSIS_LINK_Position_Test 有限位移测试配置
+ * @{
+ */
+#ifndef CHASSIS_LINK_POSITION_TEST_ENABLE
+#define CHASSIS_LINK_POSITION_TEST_ENABLE 1U
+#endif
+#define CHASSIS_LINK_POSITION_TEST_ACTIVE ((CHASSIS_LINK_POSITION_TEST_ENABLE == 1U) && (CHASSIS_LINK_SELF_TEST_ENABLE == 1U))
+#define CHASSIS_LINK_POSITION_DISTANCE_PULSES 200
+#define CHASSIS_LINK_POSITION_SPEED_PPS 500U
+#define CHASSIS_LINK_POSITION_TOLERANCE_PULSES 10
+#define CHASSIS_LINK_POSITION_TIMEOUT_MS 5000U
+#define CHASSIS_LINK_POSITION_GAP_MS 1000U
+/** @} */
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -39,8 +53,12 @@ extern "C" {
   * @defgroup CHASSIS_LINK_Task_Config 链路任务配置
   * @{
   */
+#define CHASSIS_LINK_TASK_STACK_BYTES             1536U /**< 启动诊断与串口解析任务栈容量。 */
 #define CHASSIS_LINK_POLL_TIMEOUT_MS              10U   /**< 等待接收信号量的超时，单位毫秒，超时即代表该时段无数据，同时兼作失联巡检周期。 */
 #define CHASSIS_LINK_DRIVE_RETRY_PERIOD_MS        500U  /**< 驱动器初始化失败后的重试周期，单位毫秒。 */
+#define CHASSIS_LINK_BOOT_WAIT_MS                 2500U /**< 等待驱动器首次心跳的时长。 */
+#define CHASSIS_LINK_COMMAND_VERIFY_TIMEOUT_MS    2000U /**< 命令应答后等待读回生效的时长。 */
+#define CHASSIS_LINK_MOTION_SPEED_TOLERANCE_PPS    20    /**< 实际速度与目标速度验证容差。 */
 /**
   * @}
   */
@@ -106,7 +124,7 @@ extern "C" {
   * @defgroup CHASSIS_LINK_Ramp_Config 轮廓加减速配置
   * @{
   */
-#define CHASSIS_LINK_ENABLE_PROFILE_RAMP          1U      /**< 初始化阶段是否写入轮廓加减速度，1 写入，0 沿用驱动器出厂值。默认 1：手册 4.2.2 说明「一旦设置了速度、加速度和减速度，驱动器将根据加速度值驱动电机加速到运行速度」，不写则加减速沿用驱动器内部旧值，过小时表现为使能了但起不来。 */
+#define CHASSIS_LINK_ENABLE_PROFILE_RAMP          1U      /**< 1 处理加减速度，位置测试读取现有正值，速度模式写入配置值；0 跳过。 */
 #define CHASSIS_LINK_PROFILE_ACCELERATION_PPS2    10000U  /**< 轮廓加速度，单位脉冲每平方秒，仅在开启写入时生效。手册 PP/PV 示例用 2000 或 30000，此处取中间值。 */
 #define CHASSIS_LINK_PROFILE_DECELERATION_PPS2    10000U  /**< 轮廓减速度，单位脉冲每平方秒，仅在开启写入时生效，取值待实测确认。 */
 /**

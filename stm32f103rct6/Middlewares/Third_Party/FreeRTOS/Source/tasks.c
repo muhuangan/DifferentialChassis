@@ -3398,7 +3398,7 @@ static portTASK_FUNCTION( prvIdleTask, pvParameters )
 	SCHEDULER IS STARTED. **/
 
 	/* In case a task that has a secure context deletes itself, in which case
-	the idle task is responsible for deleting the task's secure context, if
+	the+ idle task is responsible for deleting the task's secure context, if
 	any. */
 	portALLOCATE_SECURE_CONTEXT( configMINIMAL_SECURE_STACK_SIZE );
 

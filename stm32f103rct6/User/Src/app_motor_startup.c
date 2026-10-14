@@ -1017,3 +1017,416 @@ void APP_MotorStartup_VelocityTestProcess(const uint8_t *pNodeIds, uint8_t nodeC
   (void) nodeCount;
 #endif
 }
+
+volatile APP_SyncRoundDebugTypeDef g_motorSyncDebug;
+
+#if CHASSIS_LINK_SYNC_ROUND_ACTIVE
+static APP_SyncRoundDebugTypeDef s_syncRound;
+static bool                      s_syncInitialized;
+static bool                      s_syncStartingTargets;
+static uint32_t                  s_syncStopTick;
+static int32_t                   s_syncNextSpeed;
+
+/**
+ * @brief 保存失败原因和采样快照，并立即转入两轮停止流程。
+ * @note 失败后不再发非零速度；停止重试不覆盖首次失败快照。
+ */
+static void APP_SyncRound_Fail(APP_SyncRoundFailureTypeDef reason, MID_CANopenStatusTypeDef status)
+{
+  if (s_syncRound.failureReason == APP_SYNC_FAILURE_NONE)
+  {
+    s_syncRound.failureReason = reason;
+    s_syncRound.failedPhase = s_syncRound.phase;
+    s_syncRound.failureStatus = status;
+    s_syncRound.firstFailure = s_syncRound.wheels[s_syncRound.wheelIndex];
+  }
+  s_syncRound.result = APP_MOTOR_RESULT_FAILED;
+  s_syncRound.wheelIndex = 0U;
+  s_syncRound.phase = APP_SYNC_PHASE_STOP_SEND;
+}
+
+/** @brief 返回新一轮采样的第一轮，不读取未完成的其他事务结果。 */
+static void APP_SyncRound_NextWheel(void)
+{
+  s_syncRound.wheelIndex = (uint8_t) ((s_syncRound.wheelIndex + 1U) % APP_SYNC_ROUND_WHEELS);
+  s_syncRound.phase = APP_SYNC_PHASE_STATUS;
+}
+#endif
+
+/**
+ * @brief 等两轮就绪后一起起转，以位置反馈累计一轮脉冲数，接近终点时降低速度。
+ * @note 每次最多一个 SDO 事务；从 2001h 读电机每圈脉冲数并乘配置减速比，不写细分。
+ *       仅正向运行一次，不自动反转修正；位置越界、停滞、超时或通信错误均停止两轮。
+ */
+void APP_MotorStartup_SyncRoundProcess(const uint8_t *pNodeIds, uint8_t nodeCount)
+{
+#if CHASSIS_LINK_SYNC_ROUND_ACTIVE
+  APP_SyncWheelDebugTypeDef   *pWheel;
+  APP_SyncRoundPhaseTypeDef    phase;
+  MID_CANopenStatusTypeDef     status = MID_CANOPEN_OK;
+  MID_CANopenNodeTypeDef      *pNode;
+  MID_LisanEcStatusWordTypeDef driveStatus;
+  uint32_t                     now = HAL_GetTick();
+  uint64_t                     target;
+  uint64_t                     timeout;
+  int64_t                      position;
+  int64_t                      travelled;
+  int64_t                      speed;
+  int32_t                      oldPosition;
+  uint8_t                      index;
+  uint8_t                      operation;
+  bool                         isTransaction = true;
+  if ((pNodeIds == NULL) || (nodeCount != APP_SYNC_ROUND_WHEELS) || (pNodeIds[0] == pNodeIds[1]))
+  {
+    return;
+  }
+  if (!s_syncInitialized)
+  {
+    s_syncInitialized = true;
+    s_syncRound.result = APP_MOTOR_RESULT_PENDING;
+    s_syncRound.startTick = now;
+    for (index = 0U; index < APP_SYNC_ROUND_WHEELS; index++)
+    {
+      s_syncRound.wheels[index].nodeId = pNodeIds[index];
+      for (operation = 0U; operation < APP_SYNC_PHASE_COUNT; operation++)
+      {
+        s_syncRound.wheels[index].operationStatus[operation] = MID_CANOPEN_NOT_READY;
+      }
+    }
+  }
+  if ((s_syncRound.result == APP_MOTOR_RESULT_PENDING) && (s_syncRound.phase < APP_SYNC_PHASE_STOP_SEND))
+  {
+    if (!s_syncRound.started && ((now - s_syncRound.startTick) >= CHASSIS_LINK_SYNC_READY_TIMEOUT_MS))
+    {
+      APP_SyncRound_Fail(APP_SYNC_FAILURE_READY_TIMEOUT, MID_CANOPEN_TIMEOUT);
+    }
+    else if (s_syncRound.started && ((now - s_syncRound.runTick) >= s_syncRound.timeoutMs))
+    {
+      APP_SyncRound_Fail(APP_SYNC_FAILURE_TIMEOUT, MID_CANOPEN_TIMEOUT);
+    }
+  }
+  pWheel = &s_syncRound.wheels[s_syncRound.wheelIndex];
+  phase = s_syncRound.phase;
+  switch (phase)
+  {
+    case APP_SYNC_PHASE_READY:
+      isTransaction = false;
+      if (APP_MotorStartup_IsReady(pNodeIds[0]) && APP_MotorStartup_IsReady(pNodeIds[1]))
+      {
+        s_syncRound.phase = APP_SYNC_PHASE_INITIAL_VELOCITY;
+      }
+      break;
+    case APP_SYNC_PHASE_INITIAL_VELOCITY:
+      status = MID_LisanEc_ReadVelocity(pWheel->nodeId, &pWheel->actualVelocity);
+      if ((status == MID_CANOPEN_OK) && (pWheel->actualVelocity >= -CHASSIS_LINK_MOTION_SPEED_TOLERANCE_PPS) &&
+          (pWheel->actualVelocity <= CHASSIS_LINK_MOTION_SPEED_TOLERANCE_PPS))
+      {
+        s_syncRound.wheelIndex++;
+        if (s_syncRound.wheelIndex == APP_SYNC_ROUND_WHEELS)
+        {
+          s_syncRound.wheelIndex = 0U;
+          s_syncRound.phase = APP_SYNC_PHASE_PULSES_PER_REV;
+        }
+      }
+      break;
+    case APP_SYNC_PHASE_PULSES_PER_REV:
+      status = MID_CANopen_Sdo_ReadU32(pWheel->nodeId, MID_CANOPEN_OD_MICRO_STEP, 0U, &pWheel->pulsesPerMotorRev);
+      if (status == MID_CANOPEN_OK)
+      {
+        if ((pWheel->pulsesPerMotorRev == 0U) || (CHASSIS_LINK_GEAR_DENOMINATOR == 0U) ||
+            (CHASSIS_LINK_GEAR_NUMERATOR == 0U) || (CHASSIS_LINK_SELF_TEST_SPEED_PPS <= 0))
+        {
+          APP_SyncRound_Fail(APP_SYNC_FAILURE_GEOMETRY, MID_CANOPEN_INVALID_PARAM);
+          break;
+        }
+        target =
+            ((uint64_t) pWheel->pulsesPerMotorRev * CHASSIS_LINK_GEAR_NUMERATOR + CHASSIS_LINK_GEAR_DENOMINATOR / 2U) /
+            CHASSIS_LINK_GEAR_DENOMINATOR;
+        if ((target <= CHASSIS_LINK_SYNC_POSITION_TOLERANCE_PULSES) ||
+            (target > INT32_MAX - CHASSIS_LINK_SYNC_POSITION_TOLERANCE_PULSES))
+        {
+          APP_SyncRound_Fail(APP_SYNC_FAILURE_GEOMETRY, MID_CANOPEN_INVALID_PARAM);
+          break;
+        }
+        pWheel->targetPulses = (uint32_t) target;
+        timeout = target * 1000U / CHASSIS_LINK_SELF_TEST_SPEED_PPS + CHASSIS_LINK_SYNC_TIMEOUT_MARGIN_MS +
+                  (uint64_t) CHASSIS_LINK_SELF_TEST_SPEED_PPS * 2000U / CHASSIS_LINK_PROFILE_ACCELERATION_PPS2;
+        if (timeout > INT32_MAX)
+        {
+          APP_SyncRound_Fail(APP_SYNC_FAILURE_GEOMETRY, MID_CANOPEN_INVALID_PARAM);
+          break;
+        }
+        if ((uint32_t) timeout > s_syncRound.timeoutMs)
+        {
+          s_syncRound.timeoutMs = (uint32_t) timeout;
+        }
+        s_syncRound.wheelIndex++;
+        if (s_syncRound.wheelIndex == APP_SYNC_ROUND_WHEELS)
+        {
+          s_syncRound.wheelIndex = 0U;
+          s_syncRound.phase = APP_SYNC_PHASE_START_POSITION;
+        }
+      }
+      break;
+    case APP_SYNC_PHASE_START_POSITION:
+      status = MID_LisanEc_ReadPosition(pWheel->nodeId, &pWheel->startPosition);
+      if (status == MID_CANOPEN_OK)
+      {
+        position = (int64_t) pWheel->startPosition + pWheel->targetPulses;
+        if (position > INT32_MAX - CHASSIS_LINK_SYNC_POSITION_TOLERANCE_PULSES)
+        {
+          APP_SyncRound_Fail(APP_SYNC_FAILURE_GEOMETRY, MID_CANOPEN_INVALID_PARAM);
+          break;
+        }
+        pWheel->actualPosition = pWheel->startPosition;
+        pWheel->remainingPulses = (int32_t) pWheel->targetPulses;
+        s_syncRound.wheelIndex++;
+        if (s_syncRound.wheelIndex == APP_SYNC_ROUND_WHEELS)
+        {
+          s_syncRound.wheelIndex = 0U;
+          s_syncRound.phase = APP_SYNC_PHASE_START;
+        }
+      }
+      break;
+    case APP_SYNC_PHASE_START:
+      status = MID_LisanEc_SetTargetVelocity(pWheel->nodeId, CHASSIS_LINK_SELF_TEST_SPEED_PPS);
+      if (status == MID_CANOPEN_OK)
+      {
+        pWheel->commandSpeed = CHASSIS_LINK_SELF_TEST_SPEED_PPS;
+        pWheel->startCommandTick = now;
+        pWheel->lastProgressTick = now;
+        if (s_syncRound.wheelIndex == 0U)
+        {
+          s_syncRound.runTick = now;
+        }
+        s_syncRound.wheelIndex++;
+        if (s_syncRound.wheelIndex == APP_SYNC_ROUND_WHEELS)
+        {
+          s_syncRound.started = true;
+          s_syncRound.wheelIndex = 0U;
+          s_syncStartingTargets = true;
+          s_syncRound.phase = APP_SYNC_PHASE_TARGET;
+        }
+      }
+      break;
+    case APP_SYNC_PHASE_TARGET:
+      status = MID_CANopen_Sdo_ReadI32(pWheel->nodeId, MID_CANOPEN_OD_TARGET_VELOCITY, 0U, &pWheel->targetReadback);
+      if ((status == MID_CANOPEN_OK) && (pWheel->targetReadback != pWheel->commandSpeed))
+      {
+        APP_SyncRound_Fail(APP_SYNC_FAILURE_SDO, MID_CANOPEN_ERROR);
+      }
+      else if (status == MID_CANOPEN_OK)
+      {
+        if (s_syncStartingTargets && (s_syncRound.wheelIndex == 0U))
+        {
+          s_syncRound.wheelIndex = 1U;
+        }
+        else
+        {
+          s_syncStartingTargets = false;
+          APP_SyncRound_NextWheel();
+        }
+      }
+      break;
+    case APP_SYNC_PHASE_STATUS:
+      status = MID_LisanEc_ReadStatusWord(pWheel->nodeId, &driveStatus);
+      if (status == MID_CANOPEN_OK)
+      {
+        pWheel->statusWord = driveStatus.raw;
+        if (MID_LisanEc_ParseState(driveStatus.raw) != MID_LISAN_EC_STATE_OPERATION_ENABLED)
+        {
+          APP_SyncRound_Fail(APP_SYNC_FAILURE_DRIVE, MID_CANOPEN_NOT_READY);
+        }
+        else
+        {
+          s_syncRound.phase = APP_SYNC_PHASE_POSITION;
+        }
+      }
+      break;
+    case APP_SYNC_PHASE_POSITION:
+      oldPosition = pWheel->actualPosition;
+      status = MID_LisanEc_ReadPosition(pWheel->nodeId, &pWheel->actualPosition);
+      if (status == MID_CANOPEN_OK)
+      {
+        travelled = (int64_t) pWheel->actualPosition - pWheel->startPosition;
+        if ((travelled < -CHASSIS_LINK_SYNC_POSITION_TOLERANCE_PULSES) ||
+            (travelled > (int64_t) pWheel->targetPulses + CHASSIS_LINK_SYNC_POSITION_TOLERANCE_PULSES))
+        {
+          APP_SyncRound_Fail(APP_SYNC_FAILURE_POSITION, MID_CANOPEN_ERROR);
+          break;
+        }
+        pWheel->travelledPulses = (int32_t) travelled;
+        pWheel->remainingPulses = (int32_t) ((int64_t) pWheel->targetPulses - travelled);
+        if (oldPosition != pWheel->actualPosition)
+        {
+          pWheel->lastProgressTick = now;
+        }
+        s_syncRound.phase = APP_SYNC_PHASE_VELOCITY;
+      }
+      break;
+    case APP_SYNC_PHASE_VELOCITY:
+      status = MID_LisanEc_ReadVelocity(pWheel->nodeId, &pWheel->actualVelocity);
+      if (status == MID_CANOPEN_OK)
+      {
+        if (pWheel->actualVelocity > pWheel->peakVelocity)
+        {
+          pWheel->peakVelocity = pWheel->actualVelocity;
+        }
+        if ((pWheel->actualVelocity > CHASSIS_LINK_SELF_TEST_SPEED_PPS + CHASSIS_LINK_MOTION_SPEED_TOLERANCE_PPS) ||
+            (pWheel->actualVelocity < -CHASSIS_LINK_MOTION_SPEED_TOLERANCE_PPS))
+        {
+          APP_SyncRound_Fail(APP_SYNC_FAILURE_DRIVE, MID_CANOPEN_ERROR);
+        }
+        else
+        {
+          s_syncRound.phase = APP_SYNC_PHASE_ERROR;
+        }
+      }
+      break;
+    case APP_SYNC_PHASE_ERROR:
+      status = MID_LisanEc_ReadErrorCode(pWheel->nodeId, &pWheel->errorCode);
+      if ((status == MID_CANOPEN_OK) && (pWheel->errorCode != 0U))
+      {
+        APP_SyncRound_Fail(APP_SYNC_FAILURE_DRIVE, MID_CANOPEN_ERROR);
+      }
+      else if (status == MID_CANOPEN_OK)
+      {
+        s_syncRound.phase = APP_SYNC_PHASE_CONTROL;
+      }
+      break;
+    case APP_SYNC_PHASE_CONTROL:
+      isTransaction = false;
+      if (!pWheel->done && (pWheel->commandSpeed > 0) &&
+          ((now - pWheel->lastProgressTick) >= CHASSIS_LINK_SYNC_STALL_MS))
+      {
+        APP_SyncRound_Fail(APP_SYNC_FAILURE_STALL, MID_CANOPEN_TIMEOUT);
+        break;
+      }
+      if (pWheel->remainingPulses <= CHASSIS_LINK_SYNC_POSITION_TOLERANCE_PULSES)
+      {
+        s_syncNextSpeed = 0;
+        if ((pWheel->commandSpeed == 0) && (pWheel->targetReadback == 0) &&
+            (pWheel->actualVelocity >= -CHASSIS_LINK_MOTION_SPEED_TOLERANCE_PPS) &&
+            (pWheel->actualVelocity <= CHASSIS_LINK_MOTION_SPEED_TOLERANCE_PPS))
+        {
+          pWheel->done = true;
+        }
+      }
+      else if (pWheel->done)
+      {
+        APP_SyncRound_Fail(APP_SYNC_FAILURE_POSITION, MID_CANOPEN_ERROR);
+        break;
+      }
+      else
+      {
+        speed = ((int64_t) pWheel->remainingPulses - CHASSIS_LINK_SYNC_POSITION_TOLERANCE_PULSES) * 1000U /
+                CHASSIS_LINK_SYNC_SLOWDOWN_MS;
+        if (speed > CHASSIS_LINK_SELF_TEST_SPEED_PPS)
+        {
+          speed = CHASSIS_LINK_SELF_TEST_SPEED_PPS;
+        }
+        if (speed < CHASSIS_LINK_SYNC_MIN_SPEED_PPS)
+        {
+          speed = CHASSIS_LINK_SYNC_MIN_SPEED_PPS;
+        }
+        s_syncNextSpeed = (int32_t) speed;
+      }
+      if (s_syncRound.wheels[0].done && s_syncRound.wheels[1].done)
+      {
+        s_syncRound.result = APP_MOTOR_RESULT_VERIFIED;
+        s_syncRound.phase = APP_SYNC_PHASE_DONE;
+      }
+      else if (s_syncNextSpeed != pWheel->commandSpeed)
+      {
+        s_syncRound.phase = APP_SYNC_PHASE_WRITE_SPEED;
+      }
+      else
+      {
+        APP_SyncRound_NextWheel();
+      }
+      break;
+    case APP_SYNC_PHASE_WRITE_SPEED:
+      status = MID_LisanEc_SetTargetVelocity(pWheel->nodeId, s_syncNextSpeed);
+      if (status == MID_CANOPEN_OK)
+      {
+        pWheel->commandSpeed = s_syncNextSpeed;
+        s_syncRound.phase = APP_SYNC_PHASE_TARGET;
+      }
+      break;
+    case APP_SYNC_PHASE_STOP_SEND:
+      if (s_syncRound.wheelIndex == 0U)
+      {
+        s_syncRound.stopAttempts++;
+      }
+      status = MID_LisanEc_SetTargetVelocity(pWheel->nodeId, 0);
+      if (status == MID_CANOPEN_OK)
+      {
+        pWheel->commandSpeed = 0;
+      }
+      pWheel->haltConfirmed = false;
+      s_syncRound.wheelIndex++;
+      if (s_syncRound.wheelIndex == APP_SYNC_ROUND_WHEELS)
+      {
+        s_syncRound.wheelIndex = 0U;
+        s_syncRound.phase = APP_SYNC_PHASE_STOP_TARGET;
+      }
+      break;
+    case APP_SYNC_PHASE_STOP_TARGET:
+      status = MID_CANopen_Sdo_ReadI32(pWheel->nodeId, MID_CANOPEN_OD_TARGET_VELOCITY, 0U, &pWheel->targetReadback);
+      s_syncRound.phase = APP_SYNC_PHASE_STOP_VELOCITY;
+      break;
+    case APP_SYNC_PHASE_STOP_VELOCITY:
+      status = MID_LisanEc_ReadVelocity(pWheel->nodeId, &pWheel->actualVelocity);
+      pWheel->haltConfirmed =
+          (status == MID_CANOPEN_OK) && (pWheel->operationStatus[APP_SYNC_PHASE_STOP_SEND] == MID_CANOPEN_OK) &&
+          (pWheel->operationStatus[APP_SYNC_PHASE_STOP_TARGET] == MID_CANOPEN_OK) && (pWheel->targetReadback == 0) &&
+          (pWheel->actualVelocity >= -CHASSIS_LINK_MOTION_SPEED_TOLERANCE_PPS) &&
+          (pWheel->actualVelocity <= CHASSIS_LINK_MOTION_SPEED_TOLERANCE_PPS);
+      s_syncRound.wheelIndex++;
+      if (s_syncRound.wheelIndex == APP_SYNC_ROUND_WHEELS)
+      {
+        s_syncRound.wheelIndex = 0U;
+        s_syncRound.haltConfirmed = s_syncRound.wheels[0].haltConfirmed && s_syncRound.wheels[1].haltConfirmed;
+        s_syncRound.phase = s_syncRound.haltConfirmed ? APP_SYNC_PHASE_DONE : APP_SYNC_PHASE_STOP_WAIT;
+        s_syncStopTick = now;
+      }
+      else
+      {
+        s_syncRound.phase = APP_SYNC_PHASE_STOP_TARGET;
+      }
+      break;
+    case APP_SYNC_PHASE_STOP_WAIT:
+      isTransaction = false;
+      if ((now - s_syncStopTick) >= CHASSIS_LINK_DRIVE_RETRY_PERIOD_MS)
+      {
+        s_syncRound.phase = APP_SYNC_PHASE_STOP_SEND;
+      }
+      break;
+    default:
+      isTransaction = false;
+      break;
+  }
+  if (isTransaction)
+  {
+    pWheel->operationStatus[phase] = status;
+    pNode = MID_CANopen_GetNode(pWheel->nodeId);
+    if ((status == MID_CANOPEN_ABORTED) && (pNode != NULL))
+    {
+      pWheel->lastAbortCode = pNode->lastSdoAbortCode;
+    }
+    if ((status != MID_CANOPEN_OK) && (phase < APP_SYNC_PHASE_STOP_SEND))
+    {
+      s_syncRound.wheelIndex = (uint8_t) (pWheel - s_syncRound.wheels);
+      APP_SyncRound_Fail(APP_SYNC_FAILURE_SDO, status);
+    }
+    if ((s_syncRound.result == APP_MOTOR_RESULT_FAILED) && (s_syncRound.failedPhase == phase))
+    {
+      s_syncRound.firstFailure = *pWheel;
+    }
+  }
+  g_motorSyncDebug = s_syncRound;
+#else
+  (void) pNodeIds;
+  (void) nodeCount;
+#endif
+}

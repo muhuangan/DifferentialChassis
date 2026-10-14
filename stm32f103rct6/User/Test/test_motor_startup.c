@@ -54,6 +54,10 @@ typedef struct
   uint32_t               nonzeroVelocityWrites;
   uint32_t               negativeVelocityWrites;
   uint32_t               positionWriteCount;
+  uint32_t               pulsesPerRev;
+  int64_t                positionFraction;
+  bool                   simulateRamp;
+  bool                   failNonzeroVelocity;
   bool                   freezeVelocity;
   bool                   freezePosition;
   bool                   loseTriggerAck;
@@ -99,6 +103,7 @@ static void Test_Reset(void)
     s_drives[index].node.heartbeatCount = 1U;
     s_drives[index].node.nmtState = MID_CANOPEN_NMT_STATE_PRE_OPERATIONAL;
     s_drives[index].statusWord = TEST_DISABLED_STATUS;
+    s_drives[index].pulsesPerRev = 4000U;
 #if CHASSIS_LINK_POSITION_TEST_ACTIVE
     s_drives[index].acceleration = 3855U;
     s_drives[index].deceleration = 4000U;
@@ -117,6 +122,36 @@ static void Test_Run(uint32_t loops)
     s_tick += TEST_TICK_MS;
     for (index = 0U; index < TEST_NODE_COUNT; index++)
     {
+      if (s_drives[index].simulateRamp && (s_drives[index].mode == MID_LISAN_EC_MODE_PROFILE_VELOCITY))
+      {
+        int32_t  oldVelocity = s_drives[index].actualVelocity;
+        uint32_t ramp = (s_drives[index].targetVelocity > oldVelocity) ? s_drives[index].acceleration
+                                                                       : s_drives[index].deceleration;
+        int32_t  speedStep = (int32_t) ((uint64_t) ramp * TEST_TICK_MS / 1000U);
+        int64_t  pulseStep;
+        if (!s_drives[index].freezeVelocity)
+        {
+          if ((int64_t) s_drives[index].targetVelocity - oldVelocity > speedStep)
+          {
+            s_drives[index].actualVelocity += speedStep;
+          }
+          else if ((int64_t) oldVelocity - s_drives[index].targetVelocity > speedStep)
+          {
+            s_drives[index].actualVelocity -= speedStep;
+          }
+          else
+          {
+            s_drives[index].actualVelocity = s_drives[index].targetVelocity;
+          }
+        }
+        s_drives[index].positionFraction += (int64_t) (oldVelocity + s_drives[index].actualVelocity) * TEST_TICK_MS;
+        pulseStep = s_drives[index].positionFraction / 2000;
+        s_drives[index].positionFraction -= pulseStep * 2000;
+        if (!s_drives[index].freezePosition)
+        {
+          s_drives[index].actualPosition += (int32_t) pulseStep;
+        }
+      }
       if (!s_drives[index].isMissing && ((s_tick % TEST_HEARTBEAT_MS) == 0U))
       {
         s_drives[index].node.hasHeartbeat = true;
@@ -245,6 +280,10 @@ MID_CANopenStatusTypeDef MID_CANopen_Sdo_WriteI32(uint8_t id, uint16_t object, u
   {
     return MID_CANOPEN_TIMEOUT;
   }
+  if ((object == MID_CANOPEN_OD_TARGET_VELOCITY) && (value != 0) && pDrive->failNonzeroVelocity)
+  {
+    return MID_CANOPEN_TIMEOUT;
+  }
   pDrive->commandCount++;
   if (object == MID_CANOPEN_OD_TARGET_POSITION)
   {
@@ -266,7 +305,7 @@ MID_CANopenStatusTypeDef MID_CANopen_Sdo_WriteI32(uint8_t id, uint16_t object, u
     pDrive->negativeVelocityWrites++;
   }
   pDrive->targetVelocity = value;
-  if (!pDrive->freezeVelocity || (value == 0))
+  if (!pDrive->simulateRamp && (!pDrive->freezeVelocity || (value == 0)))
   {
     pDrive->actualVelocity = value;
   }
@@ -306,6 +345,10 @@ MID_CANopenStatusTypeDef MID_CANopen_Sdo_ReadU32(uint8_t id, uint16_t object, ui
   if (object == MID_CANOPEN_OD_PROFILE_VELOCITY)
   {
     *pValue = pDrive->profileSpeed;
+  }
+  if (object == MID_CANOPEN_OD_MICRO_STEP)
+  {
+    *pValue = pDrive->pulsesPerRev;
   }
   return MID_CANOPEN_OK;
 }

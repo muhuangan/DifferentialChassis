@@ -18,6 +18,7 @@ suites = {
     'test_canopen_sdo': ['mid_canopen.c'],
     'test_position_test': ['app_motor_startup.c', 'mid_lisan_ec.c'],
     'test_velocity_test': ['app_motor_startup.c', 'mid_lisan_ec.c'],
+    'test_sync_round': ['app_motor_startup.c', 'mid_lisan_ec.c'],
 }
 with tempfile.TemporaryDirectory(prefix='chassis_tests_') as directory:
     for name, sources in suites.items():
@@ -29,5 +30,7 @@ with tempfile.TemporaryDirectory(prefix='chassis_tests_') as directory:
         cases = ['normal', 'no_motion', 'lost_ack', 'rejected', 'read_failure', 'halt_failure', 'zero_ramp'] if name == 'test_position_test' else ['']
         if name == 'test_velocity_test':
             cases = ['normal', 'no_motion', 'stop_failure', 'fault', 'read_failure', 'missing_node']
+        if name == 'test_sync_round':
+            cases = ['normal', 'different_ppr', 'bad_ppr', 'overflow_ppr', 'start_failure', 'stall', 'read_failure', 'overspeed', 'stop_failure', 'missing_node']
         for case in cases:
             subprocess.run([str(exe), case], check=True, timeout=30)

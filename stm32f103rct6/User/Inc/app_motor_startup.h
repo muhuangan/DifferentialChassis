@@ -205,6 +205,87 @@ extern "C"
   extern volatile APP_VelocityTestDebugTypeDef g_motorVelocityDebug[CANOPEN_MAX_NODE_COUNT];
   void APP_MotorStartup_VelocityTestProcess(const uint8_t *pNodeIds, uint8_t nodeCount);
 
+/** @defgroup APP_SYNC_ROUND_Phase 双轮一圈阶段
+ * @{
+ */
+#define APP_SYNC_ROUND_WHEELS 2U
+  typedef enum
+  {
+    APP_SYNC_PHASE_READY = 0U,
+    APP_SYNC_PHASE_INITIAL_VELOCITY,
+    APP_SYNC_PHASE_PULSES_PER_REV,
+    APP_SYNC_PHASE_START_POSITION,
+    APP_SYNC_PHASE_START,
+    APP_SYNC_PHASE_TARGET,
+    APP_SYNC_PHASE_STATUS,
+    APP_SYNC_PHASE_POSITION,
+    APP_SYNC_PHASE_VELOCITY,
+    APP_SYNC_PHASE_ERROR,
+    APP_SYNC_PHASE_CONTROL,
+    APP_SYNC_PHASE_WRITE_SPEED,
+    APP_SYNC_PHASE_STOP_SEND,
+    APP_SYNC_PHASE_STOP_TARGET,
+    APP_SYNC_PHASE_STOP_VELOCITY,
+    APP_SYNC_PHASE_STOP_WAIT,
+    APP_SYNC_PHASE_DONE,
+    APP_SYNC_PHASE_COUNT
+  } APP_SyncRoundPhaseTypeDef;
+  typedef enum
+  {
+    APP_SYNC_FAILURE_NONE = 0U,
+    APP_SYNC_FAILURE_READY_TIMEOUT,
+    APP_SYNC_FAILURE_GEOMETRY,
+    APP_SYNC_FAILURE_SDO,
+    APP_SYNC_FAILURE_DRIVE,
+    APP_SYNC_FAILURE_POSITION,
+    APP_SYNC_FAILURE_STALL,
+    APP_SYNC_FAILURE_TIMEOUT
+  } APP_SyncRoundFailureTypeDef;
+  /** @} */
+  /** @brief 单轮的每圈参数、累计位置和最新有效反馈，读取状态必须为 OK 才可使用数值。 */
+  typedef struct
+  {
+    uint8_t                  nodeId;
+    uint32_t                 pulsesPerMotorRev;
+    uint32_t                 targetPulses;
+    int32_t                  startPosition;
+    int32_t                  actualPosition;
+    int32_t                  travelledPulses;
+    int32_t                  remainingPulses;
+    int32_t                  commandSpeed;
+    int32_t                  actualVelocity;
+    int32_t                  targetReadback;
+    int32_t                  peakVelocity;
+    uint16_t                 statusWord;
+    uint16_t                 errorCode;
+    uint32_t                 startCommandTick;
+    uint32_t                 lastProgressTick;
+    uint32_t                 lastAbortCode;
+    bool                     done;
+    bool                     haltConfirmed;
+    MID_CANopenStatusTypeDef operationStatus[APP_SYNC_PHASE_COUNT];
+  } APP_SyncWheelDebugTypeDef;
+  /** @brief 双轮一起运行一次，任一失败停止两轮并保留失败当时的单轮快照。 */
+  typedef struct
+  {
+    APP_MotorCommandResultTypeDef result;
+    APP_SyncRoundPhaseTypeDef     phase;
+    uint8_t                       wheelIndex;
+    bool                          started;
+    bool                          haltConfirmed;
+    uint32_t                      startTick;
+    uint32_t                      runTick;
+    uint32_t                      timeoutMs;
+    uint32_t                      stopAttempts;
+    APP_SyncRoundFailureTypeDef   failureReason;
+    APP_SyncRoundPhaseTypeDef     failedPhase;
+    MID_CANopenStatusTypeDef      failureStatus;
+    APP_SyncWheelDebugTypeDef     firstFailure;
+    APP_SyncWheelDebugTypeDef     wheels[APP_SYNC_ROUND_WHEELS];
+  } APP_SyncRoundDebugTypeDef;
+  extern volatile APP_SyncRoundDebugTypeDef g_motorSyncDebug;
+  void APP_MotorStartup_SyncRoundProcess(const uint8_t *pNodeIds, uint8_t nodeCount);
+
   MID_CANopenStatusTypeDef      APP_MotorStartup_AddNode(uint8_t nodeId);
   void                          APP_MotorStartup_Process(void);
   bool                          APP_MotorStartup_IsReady(uint8_t nodeId);

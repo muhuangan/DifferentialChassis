@@ -311,8 +311,8 @@ static void APP_ChassisLink_EnsureDriveReady(void)
 
 #if (CHASSIS_LINK_SELF_TEST_ENABLE == 1U)
 /**
-  * @brief  根据配置推进有限位置点动或速度自检，停稳后才切换另一轮。
-  * @note   位置和速度测试都逐轮正反各一次，实际停止确认后才换方向或节点。
+  * @brief  根据配置推进位置点动、单轮速度点动或双轮一圈测试。
+  * @note   双轮一圈模式等待两轮就绪并按位置反馈分别停车；其他测试逐轮正反各一次。
   *         自检期间不执行上位机速度下发，避免两个流程覆盖目标速度。
   */
 static void APP_ChassisLink_RunSelfTest(void)
@@ -320,7 +320,11 @@ static void APP_ChassisLink_RunSelfTest(void)
 #if CHASSIS_LINK_POSITION_TEST_ACTIVE
   APP_MotorStartup_PositionTestProcess();
 #else
+#if CHASSIS_LINK_SYNC_ROUND_ACTIVE
+  APP_MotorStartup_SyncRoundProcess(s_selfTestNodeIds, CHASSIS_LINK_SELF_TEST_NODE_COUNT);
+#else
   APP_MotorStartup_VelocityTestProcess(s_selfTestNodeIds, CHASSIS_LINK_SELF_TEST_NODE_COUNT);
+#endif
 #endif
 }
 #endif

@@ -79,14 +79,15 @@ static int32_t MID_ChassisProtocol_ToInt32(const uint8_t *pBytes)
 
 /**
   * @brief  校验速度是否在允许范围内。
-  * @param  speed  待校验速度，单位脉冲每秒。
-  * @retval true   绝对值不超过 CHASSIS_LINK_SPEED_LIMIT_PPS。
+  * @param  speed  待校验速度，单位转每分，即上位机帧内的轮子目标转速。
+  * @retval true   绝对值不超过 CHASSIS_LINK_SPEED_LIMIT_RPM。
   * @retval false  超出限幅，对应帧被判为非法。
-  * @note   限幅值取自 CHASSIS_LINK_SPEED_LIMIT_PPS，任一轮超限即整帧丢弃。
+  * @note   限幅值取自 CHASSIS_LINK_SPEED_LIMIT_RPM，任一轮超限即整帧丢弃；
+  *         该宏需与上位机的 rpm_limit 保持一致，否则上位机发得出去、本端会判非法。
   */
 static bool MID_ChassisProtocol_IsSpeedInRange(int32_t speed)
 {
-  return ((speed <= CHASSIS_LINK_SPEED_LIMIT_PPS) && (speed >= -CHASSIS_LINK_SPEED_LIMIT_PPS));
+  return ((speed <= CHASSIS_LINK_SPEED_LIMIT_RPM) && (speed >= -CHASSIS_LINK_SPEED_LIMIT_RPM));
 }
 
 /**

@@ -53,6 +53,7 @@ typedef enum
   * @}
   */
 
+#if (MID_LISAN_EC_ENABLE_TORQUE_MODE == 1)
 /**
   * @defgroup MID_LISAN_EC_Torque_Mode Lisan EC Torque Work Mode
   * @{
@@ -66,6 +67,8 @@ typedef enum
 /**
   * @}
   */
+#endif
+
 
 /**
   * @defgroup MID_LISAN_EC_Control_Word Lisan EC Control Word 0x6040
@@ -134,6 +137,7 @@ typedef enum
   * @}
   */
 
+#if (MID_LISAN_EC_ENABLE_DRIVE_PARAM == 1)
 /**
   * @defgroup MID_LISAN_EC_Direction Lisan EC Motor Direction
   * @{
@@ -143,7 +147,10 @@ typedef enum
 /**
   * @}
   */
+#endif
 
+
+#if (MID_LISAN_EC_ENABLE_MAINTENANCE == 1)
 /**
   * @defgroup MID_LISAN_EC_Address_Source Lisan EC Node Address Source
   * @{
@@ -153,7 +160,10 @@ typedef enum
 /**
   * @}
   */
+#endif
 
+
+#if (MID_LISAN_EC_ENABLE_HOMING == 1)
 /**
   * @defgroup MID_LISAN_EC_Homing_Method Lisan EC Homing Method
   * @{
@@ -165,6 +175,8 @@ typedef enum
 /**
   * @}
   */
+#endif
+
 
 /**
   * @defgroup MID_LISAN_EC_Error_Code Lisan EC Error Code 0x603F
@@ -222,63 +234,61 @@ typedef struct
   bool     isHomingAttained;       /**< bit15 原点回零完成。 */
 } MID_LisanEcStatusWordTypeDef;
 
+#if (MID_LISAN_EC_ENABLE_STATE_CMDS == 1)
 MID_CANopenStatusTypeDef MID_LisanEc_EnableDrive(uint8_t nodeId);
+#endif
 
 MID_CANopenStatusTypeDef MID_LisanEc_WriteControlWord(uint8_t nodeId, uint16_t controlWord);
 
+#if (MID_LISAN_EC_ENABLE_STATE_CMDS == 1)
 MID_CANopenStatusTypeDef MID_LisanEc_ReadControlWord(uint8_t nodeId, uint16_t *pControlWord);
-
 MID_CANopenStatusTypeDef MID_LisanEc_SetMotorFree(uint8_t nodeId);
-
 MID_CANopenStatusTypeDef MID_LisanEc_SetMotorLock(uint8_t nodeId);
-
 MID_CANopenStatusTypeDef MID_LisanEc_QuickStop(uint8_t nodeId);
-
 MID_CANopenStatusTypeDef MID_LisanEc_Halt(uint8_t nodeId);
-
 MID_CANopenStatusTypeDef MID_LisanEc_FaultReset(uint8_t nodeId);
+#endif
 
 MID_CANopenStatusTypeDef MID_LisanEc_SetOperationMode(uint8_t nodeId, MID_LisanEcModeTypeDef mode);
 
 MID_CANopenStatusTypeDef MID_LisanEc_ReadOperationMode(uint8_t nodeId, MID_LisanEcModeTypeDef *pMode);
 
+#if (MID_LISAN_EC_ENABLE_DRIVE_PARAM == 1)
 MID_CANopenStatusTypeDef MID_LisanEc_SetMicroStep(uint8_t nodeId, uint32_t pulsePerRound);
-
 MID_CANopenStatusTypeDef MID_LisanEc_SetPeakCurrent(uint8_t nodeId, uint16_t currentMa);
-
 MID_CANopenStatusTypeDef MID_LisanEc_SetSmoothTime(uint8_t nodeId, uint16_t smoothTimeMs);
-
 MID_CANopenStatusTypeDef MID_LisanEc_SetMinimumCurrent(uint8_t nodeId, uint16_t minimumCurrent);
-
 MID_CANopenStatusTypeDef MID_LisanEc_SetMotorDirection(uint8_t nodeId, uint16_t direction);
+#endif
 
 MID_CANopenStatusTypeDef MID_LisanEc_SetProfileAcceleration(uint8_t nodeId, uint32_t acceleration);
 
 MID_CANopenStatusTypeDef MID_LisanEc_SetProfileDeceleration(uint8_t nodeId, uint32_t deceleration);
 
+#if (MID_LISAN_EC_ENABLE_DRIVE_PARAM == 1)
 MID_CANopenStatusTypeDef MID_LisanEc_SetProfileVelocity(uint8_t nodeId, uint32_t velocity);
+#endif
 
 MID_CANopenStatusTypeDef MID_LisanEc_SetTargetPosition(uint8_t nodeId, int32_t position);
 
 MID_CANopenStatusTypeDef MID_LisanEc_SetTargetVelocity(uint8_t nodeId, int32_t velocity);
 
+#if (MID_LISAN_EC_ENABLE_TORQUE_MODE == 1)
 MID_CANopenStatusTypeDef MID_LisanEc_SetTargetTorque(uint8_t nodeId, int16_t torque);
-
 MID_CANopenStatusTypeDef MID_LisanEc_SetMaxTorque(uint8_t nodeId, uint16_t maxTorque);
-
 MID_CANopenStatusTypeDef MID_LisanEc_ConfigureTorqueMode(uint8_t nodeId, MID_LisanEcTorqueModeTypeDef torqueMode,
                                                          uint16_t offsetPulse, uint16_t maxSpeed);
-
+#endif
+#if (MID_LISAN_EC_ENABLE_HOMING == 1)
 MID_CANopenStatusTypeDef MID_LisanEc_ConfigureHoming(uint8_t nodeId, uint8_t method, uint32_t fastSpeed,
                                                      uint32_t slowSpeed, uint32_t acceleration);
-
-MID_CANopenStatusTypeDef MID_LisanEc_MoveAbsolute(uint8_t nodeId, int32_t position, bool isImmediate);
-
-MID_CANopenStatusTypeDef MID_LisanEc_MoveRelative(uint8_t nodeId, int32_t deltaPosition, bool isImmediate);
-
-MID_CANopenStatusTypeDef MID_LisanEc_ClearSetpoint(uint8_t nodeId);
-
 MID_CANopenStatusTypeDef MID_LisanEc_StartHoming(uint8_t nodeId);
+#endif
+#if (MID_LISAN_EC_ENABLE_POSITION_MOVE == 1)
+MID_CANopenStatusTypeDef MID_LisanEc_MoveAbsolute(uint8_t nodeId, int32_t position, bool isImmediate);
+MID_CANopenStatusTypeDef MID_LisanEc_MoveRelative(uint8_t nodeId, int32_t deltaPosition, bool isImmediate);
+MID_CANopenStatusTypeDef MID_LisanEc_ClearSetpoint(uint8_t nodeId);
+#endif
 
 MID_CANopenStatusTypeDef MID_LisanEc_ReadStatusWord(uint8_t nodeId, MID_LisanEcStatusWordTypeDef *pStatus);
 
@@ -286,23 +296,24 @@ MID_CANopenStatusTypeDef MID_LisanEc_ReadPosition(uint8_t nodeId, int32_t *pPosi
 
 MID_CANopenStatusTypeDef MID_LisanEc_ReadVelocity(uint8_t nodeId, int32_t *pVelocity);
 
+#if (MID_LISAN_EC_ENABLE_MAINTENANCE == 1)
 MID_CANopenStatusTypeDef MID_LisanEc_ReadCurrent(uint8_t nodeId, int16_t *pCurrent);
+#endif
 
 MID_CANopenStatusTypeDef MID_LisanEc_ReadErrorCode(uint8_t nodeId, uint16_t *pErrorCode);
 
+#if (MID_LISAN_EC_ENABLE_MAINTENANCE == 1)
 MID_CANopenStatusTypeDef MID_LisanEc_ReadDigitalInputs(uint8_t nodeId, uint32_t *pInputs);
-
 MID_CANopenStatusTypeDef MID_LisanEc_SetNodeAddress(uint8_t nodeId, uint16_t newAddress, bool isFromObject);
-
 MID_CANopenStatusTypeDef MID_LisanEc_StoreParameters(uint8_t nodeId);
-
 MID_CANopenStatusTypeDef MID_LisanEc_RestoreDefault(uint8_t nodeId);
+#endif
 
 MID_LisanEcStateTypeDef MID_LisanEc_ParseState(uint16_t statusWord);
 
-void MID_LisanEc_ParseStatusWord(uint16_t statusWord, MID_LisanEcStatusWordTypeDef *pStatus);
-
+#if (MID_LISAN_EC_ENABLE_MAINTENANCE == 1)
 const char *MID_LisanEc_ErrorCodeToString(uint16_t errorCode);
+#endif
 
 #ifdef __cplusplus
 }

@@ -481,6 +481,31 @@
               <FileType>1</FileType>
               <FilePath>../User/Src/app_chassis_link.c</FilePath>
             </File>
+            <File>
+              <FileName>app_motor_startup.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../User/Src/app_motor_startup.c</FilePath>
+            </File>
+            <File>
+              <FileName>app_power_monitor.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../User/Src/app_power_monitor.c</FilePath>
+            </File>
+            <File>
+              <FileName>mid_battery.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../User/Src/mid_battery.c</FilePath>
+            </File>
+            <File>
+              <FileName>mid_oled.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../User/Src/mid_oled.c</FilePath>
+            </File>
+            <File>
+              <FileName>mid_oled_font.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../User/Src/mid_oled_font.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

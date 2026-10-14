@@ -1,6 +1,6 @@
 /**
   ******************************************************************************
-  * @file    mid_chassis_protocol_test.c
+  * @file    test_mid_chassis_protocol.c
   * @brief   底盘通信帧解析状态机的宿主机自测用例。
   * @author  muhuangan
   * @date    2026-10-12
@@ -16,7 +16,7 @@
   *
   * 本文件只用于宿主机自测，不参与固件构建。
   * 编译与运行示例：
-  *   gcc -std=c99 -Wall -Wextra -I../Inc -I../Config -o /tmp/proto_test mid_chassis_protocol_test.c ../Src/mid_chassis_protocol.c
+  *   gcc -std=c99 -Wall -Wextra -I../Inc -I../Config -o /tmp/proto_test test_mid_chassis_protocol.c ../Src/mid_chassis_protocol.c
   *   /tmp/proto_test
   *
   ******************************************************************************
@@ -145,15 +145,15 @@ static void Test_ValidFrame(void)
 
   Test_ResetCounters(&counters);
   MID_ChassisProtocol_Reset();
-  Test_BuildFrame(frame, 1234, -5678);
+  Test_BuildFrame(frame, 40, -60);
   Test_Feed(frame, MID_CHASSIS_FRAME_LENGTH_BYTES, &counters);
 
   Test_Check(counters.validCount == 1U, "valid frame: one valid result");
   Test_Check(counters.noneCount == (MID_CHASSIS_FRAME_LENGTH_BYTES - 1U), "valid frame: no premature result");
   Test_Check(counters.headerMismatchCount == 0U, "valid frame: no header mismatch");
   Test_Check(counters.tailMismatchCount == 0U, "valid frame: no tail mismatch");
-  Test_Check(counters.lastPayload.leftSpeed == 1234, "valid frame: left payload");
-  Test_Check(counters.lastPayload.rightSpeed == -5678, "valid frame: right payload");
+  Test_Check(counters.lastPayload.leftSpeed == 40, "valid frame: left payload");
+  Test_Check(counters.lastPayload.rightSpeed == -60, "valid frame: right payload");
 }
 
 static void Test_TwoFramesInOneChunk(void)
@@ -163,13 +163,13 @@ static void Test_TwoFramesInOneChunk(void)
 
   Test_ResetCounters(&counters);
   MID_ChassisProtocol_Reset();
-  Test_BuildFrame(&bytes[0], 100, 200);
-  Test_BuildFrame(&bytes[MID_CHASSIS_FRAME_LENGTH_BYTES], -300, -400);
+  Test_BuildFrame(&bytes[0], 40, 50);
+  Test_BuildFrame(&bytes[MID_CHASSIS_FRAME_LENGTH_BYTES], -30, -40);
   Test_Feed(bytes, (uint16_t)sizeof(bytes), &counters);
 
   Test_Check(counters.validCount == 2U, "back to back: two valid results");
-  Test_Check(counters.lastPayload.leftSpeed == -300, "back to back: second left payload");
-  Test_Check(counters.lastPayload.rightSpeed == -400, "back to back: second right payload");
+  Test_Check(counters.lastPayload.leftSpeed == -30, "back to back: second left payload");
+  Test_Check(counters.lastPayload.rightSpeed == -40, "back to back: second right payload");
 }
 
 static void Test_SplitDelivery(void)
@@ -197,13 +197,13 @@ static void Test_PayloadContainsTailBytes(void)
   Test_ResetCounters(&counters);
   MID_ChassisProtocol_Reset();
 
-  /* 左轮速度小端字节为 0D 0A 00 00，与帧尾序列相同，用于验证帧尾只按固定偏移校验。 */
-  Test_BuildFrame(frame, 0x00000A0D, 0x00000A0D);
+  /* 速度值取 10 与 13，小端末字节分别为 0A 与 0D，与帧尾序列同字节，用于验证帧尾只按固定偏移校验。 */
+  Test_BuildFrame(frame, 10, 13);
   Test_Feed(frame, MID_CHASSIS_FRAME_LENGTH_BYTES, &counters);
 
   Test_Check(counters.validCount == 1U, "tail-like payload: one valid result");
-  Test_Check(counters.lastPayload.leftSpeed == 0x00000A0D, "tail-like payload: left payload");
-  Test_Check(counters.lastPayload.rightSpeed == 0x00000A0D, "tail-like payload: right payload");
+  Test_Check(counters.lastPayload.leftSpeed == 10, "tail-like payload: left payload");
+  Test_Check(counters.lastPayload.rightSpeed == 13, "tail-like payload: right payload");
 }
 
 static void Test_LeadingGarbageResync(void)
@@ -253,15 +253,15 @@ static void Test_RangeLimits(void)
 
   Test_ResetCounters(&counters);
   MID_ChassisProtocol_Reset();
-  Test_BuildFrame(frame, CHASSIS_LINK_SPEED_LIMIT_PPS, -CHASSIS_LINK_SPEED_LIMIT_PPS);
+  Test_BuildFrame(frame, CHASSIS_LINK_SPEED_LIMIT_RPM, -CHASSIS_LINK_SPEED_LIMIT_RPM);
   Test_Feed(frame, MID_CHASSIS_FRAME_LENGTH_BYTES, &counters);
   Test_Check(counters.validCount == 1U, "range limit: boundary values accepted");
-  Test_Check(counters.lastPayload.leftSpeed == CHASSIS_LINK_SPEED_LIMIT_PPS, "range limit: left boundary");
-  Test_Check(counters.lastPayload.rightSpeed == -CHASSIS_LINK_SPEED_LIMIT_PPS, "range limit: right boundary");
+  Test_Check(counters.lastPayload.leftSpeed == CHASSIS_LINK_SPEED_LIMIT_RPM, "range limit: left boundary");
+  Test_Check(counters.lastPayload.rightSpeed == -CHASSIS_LINK_SPEED_LIMIT_RPM, "range limit: right boundary");
 
   Test_ResetCounters(&counters);
   MID_ChassisProtocol_Reset();
-  Test_BuildFrame(frame, CHASSIS_LINK_SPEED_LIMIT_PPS + 1, 0);
+  Test_BuildFrame(frame, CHASSIS_LINK_SPEED_LIMIT_RPM + 1, 0);
   Test_Feed(frame, MID_CHASSIS_FRAME_LENGTH_BYTES, &counters);
   Test_Check(counters.rangeErrorCount == 1U, "range limit: over limit rejected");
   Test_Check(counters.validCount == 0U, "range limit: over limit yields no valid frame");

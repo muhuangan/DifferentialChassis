@@ -52,7 +52,18 @@ static const osSemaphoreAttr_t s_rxSemaphoreAttr =
   .cb_size   = sizeof(s_rxSemaphoreBuffer)
 };
 
+#if (CHASSIS_LINK_FRAME_PARSE_ACTIVE == 1U)
 static uint8_t s_parseBuffer[CHASSIS_LINK_PARSE_CHUNK_BYTES];   /**< 从环形缓冲区批量取数的中转缓冲区。 */
+#endif
+
+#if (CHASSIS_LINK_UPPER_SIM_ACTIVE == 1U)
+static uint8_t  s_simFrame[MID_CHASSIS_FRAME_LENGTH_BYTES]; /**< 按协议布局拼好待注入环形缓冲区的报文。 */
+static uint32_t s_simLastTick = 0U;                        /**< 最近一次注入模拟报文的时刻，单位毫秒。 */
+static int32_t  s_simLeftSpeed = 0;                        /**< 左轮三角波当前转速，单位转每分。 */
+static int32_t  s_simRightSpeed = 0;                       /**< 右轮三角波当前转速，单位转每分。 */
+static bool     s_isSimLeftRising = false;                 /**< 左轮三角波当前处于升速段还是降速段。 */
+static bool     s_isSimRightRising = false;                /**< 右轮三角波当前处于升速段还是降速段。 */
+#endif
 
 /* 左右轮节点地址组，顺序由 CHASSIS_LINK_WHEEL_NODE_ID_LIST 决定，取用下标统一用 CHASSIS_LINK_WHEEL_INDEX_* 表达。 */
 static const uint8_t s_wheelNodeIds[CHASSIS_LINK_WHEEL_COUNT] = CHASSIS_LINK_WHEEL_NODE_ID_LIST;
@@ -61,10 +72,8 @@ static int32_t  s_targetLeftSpeed = 0;           /**< 上位机最新下发的�
 static int32_t  s_targetRightSpeed = 0;          /**< 上位机最新下发的右轮目标速度，单位脉冲每秒。 */
 static int32_t  s_sentLeftSpeed = 0;             /**< 最近一次实际下发的左轮速度，单位脉冲每秒。 */
 static int32_t  s_sentRightSpeed = 0;            /**< 最近一次实际下发的右轮速度，单位脉冲每秒。 */
-static uint32_t s_lastValidFrameTick = 0U;       /**< 最近一次收到合法帧的时间戳，单位毫秒。 */
 static uint32_t s_lastDispatchTick = 0U;         /**< 最近一次下发速度的时间戳，单位毫秒。 */
 static bool     s_hasValidFrame = false;         /**< 是否收到过至少一帧合法数据。 */
-static bool     s_isCommunicationLost = false;   /**< 上位机通信超时标志。 */
 static bool     s_isDriveReady = false;          /**< 两轮驱动器是否已完成模式设置与使能。 */
 
 static volatile uint32_t s_validFrameCount = 0U;         /**< 合法帧累计数。 */
@@ -74,7 +83,6 @@ static volatile uint32_t s_rangeErrorCount = 0U;         /**< 范围校验失败
 static volatile uint32_t s_dispatchCount = 0U;           /**< 单轮转速下发成功累计数。 */
 static volatile uint32_t s_dispatchFailureCount = 0U;    /**< 转速下发失败累计数。 */
 static volatile uint32_t s_lastSdoAbortCode = 0U;        /**< 最近一次下发失败对应节点的 SDO 中止码。 */
-static volatile uint32_t s_commLostCount = 0U;           /**< 通信超时触发停机的累计次数。 */
 
 #if (CHASSIS_LINK_SELF_TEST_ENABLE == 0U)
 static uint32_t s_pulsesPerWheelRev[CHASSIS_LINK_WHEEL_COUNT]; /**< 左右轮各转一圈对应的脉冲数，取 2001h 每电机圈脉冲数乘减速比，用于把上位机 rpm 换算成 60FFh 的脉冲每秒。 */
@@ -90,8 +98,16 @@ static const uint8_t s_selfTestNodeIds[CHASSIS_LINK_SELF_TEST_NODE_COUNT] = CHAS
 
 static void APP_ChassisLink_EnsureDriveReady(void);
 #if (CHASSIS_LINK_SELF_TEST_ENABLE == 0U)
-static void APP_ChassisLink_DrainAndParse(void);
+static void APP_ChassisLink_HandleByte(uint8_t byte);
 static void APP_ChassisLink_OnValidFrame(const MID_ChassisPayloadTypeDef *pPayload);
+#endif
+#if (CHASSIS_LINK_FRAME_PARSE_ACTIVE == 1U)
+static void APP_ChassisLink_DrainAndParse(void);
+#endif
+#if (CHASSIS_LINK_UPPER_SIM_ACTIVE == 1U)
+static void APP_ChassisLink_PackSimFrame(uint8_t *pFrame, int32_t leftRpm, int32_t rightRpm);
+static void APP_ChassisLink_AdvanceSimWave(void);
+static void APP_ChassisLink_InjectSimFrame(void);
 #endif
 #if (CHASSIS_LINK_SELF_TEST_ENABLE == 0U)
 static void APP_ChassisLink_Dispatch(void);
@@ -108,9 +124,6 @@ static void APP_ChassisLink_RecordFailure(uint8_t nodeId);
 static int32_t APP_ChassisLink_ApplyInvert(int32_t speed, uint32_t invertFlag);
 #if (CHASSIS_LINK_SELF_TEST_ENABLE == 0U)
 static bool APP_ChassisLink_IsSpeedChanged(int32_t target, int32_t sent);
-#endif
-#if (CHASSIS_LINK_SELF_TEST_ENABLE == 0U)
-static bool APP_ChassisLink_IsCommunicationLost(uint32_t currentTick);
 #endif
 
 #if (CHASSIS_LINK_SELF_TEST_ENABLE == 1U)
@@ -213,24 +226,6 @@ static bool APP_ChassisLink_IsSpeedChanged(int32_t target, int32_t sent)
   return (delta > CHASSIS_LINK_SPEED_DEADBAND_PPS);
 }
 
-/**
-  * @brief  判断上位机数据是否已超时。
-  * @param  currentTick  当前时间戳，单位毫秒。
-  * @retval true   距最近一次合法帧已超过 CHASSIS_LINK_COMM_TIMEOUT_MS。
-  * @retval false  通信正常，或 CHASSIS_LINK_ENABLE_COMM_TIMEOUT_STOP 关闭了超时停机。
-  * @note   超时门限为 CHASSIS_LINK_COMM_TIMEOUT_MS；编译期关闭超时停机开关时恒返回 false，不产生运行时开销。
-  */
-static bool APP_ChassisLink_IsCommunicationLost(uint32_t currentTick)
-{
-#if (CHASSIS_LINK_ENABLE_COMM_TIMEOUT_STOP == 1U)
-  return ((currentTick - s_lastValidFrameTick) > CHASSIS_LINK_COMM_TIMEOUT_MS);
-#else
-  (void)currentTick;
-
-  return false;
-#endif
-}
-
 #endif
 
 /**
@@ -316,11 +311,43 @@ static void APP_ChassisLink_OnValidFrame(const MID_ChassisPayloadTypeDef *pPaylo
   s_targetRightSpeed = APP_ChassisLink_ApplyInvert(
     APP_ChassisLink_RpmToPps(pPayload->rightSpeed, s_pulsesPerWheelRev[CHASSIS_LINK_WHEEL_INDEX_RIGHT]),
     CHASSIS_LINK_SPEED_INVERT_RIGHT);
-  s_lastValidFrameTick = HAL_GetTick();
   s_hasValidFrame = true;
 }
 #endif
 
+/**
+  * @brief  把一个字节投喂给解析器，并按解析结果刷新负载或累加统计计数。
+  * @param  byte  待解析字节。
+  * @retval None
+  * @note   串口接收与上位机帧模拟两个来源共用本函数，保证两者对解析结果的处理完全一致，
+  *         统计计数与负载刷新语义不会因为数据来源不同而出现差异。
+  */
+#if (CHASSIS_LINK_SELF_TEST_ENABLE == 0U)
+static void APP_ChassisLink_HandleByte(uint8_t byte)
+{
+  MID_ChassisPayloadTypeDef payload;
+
+  switch (MID_ChassisProtocol_ParseByte(byte, &payload))
+  {
+    case MID_CHASSIS_PARSE_VALID:
+      APP_ChassisLink_OnValidFrame(&payload);
+      break;
+    case MID_CHASSIS_PARSE_HEADER_MISMATCH:
+      s_headerMismatchCount++;
+      break;
+    case MID_CHASSIS_PARSE_TAIL_MISMATCH:
+      s_tailMismatchCount++;
+      break;
+    case MID_CHASSIS_PARSE_RANGE_ERROR:
+      s_rangeErrorCount++;
+      break;
+    default:
+      break;
+  }
+}
+#endif
+
+#if (CHASSIS_LINK_FRAME_PARSE_ACTIVE == 1U)
 /**
   * @brief  取走环形缓冲区中已到达的数据并逐字节解析成帧。
   * @param  None
@@ -329,10 +356,8 @@ static void APP_ChassisLink_OnValidFrame(const MID_ChassisPayloadTypeDef *pPaylo
   *         本轮总取数不超过一环容量，防止数据持续到达时长时间占住任务；
   *         解析结果按合法帧、帧头失配、帧尾失配、范围错误分别累加统计。
   */
-#if (CHASSIS_LINK_SELF_TEST_ENABLE == 0U)
 static void APP_ChassisLink_DrainAndParse(void)
 {
-  MID_ChassisPayloadTypeDef payload;
   uint16_t available = MID_UartRing_GetAvailable();
   uint16_t budget = MID_UART_RING_SIZE_BYTES;
   uint16_t count = 0U;
@@ -350,28 +375,125 @@ static void APP_ChassisLink_DrainAndParse(void)
 
     for (index = 0U; index < count; index++)
     {
-      switch (MID_ChassisProtocol_ParseByte(s_parseBuffer[index], &payload))
-      {
-        case MID_CHASSIS_PARSE_VALID:
-          APP_ChassisLink_OnValidFrame(&payload);
-          break;
-        case MID_CHASSIS_PARSE_HEADER_MISMATCH:
-          s_headerMismatchCount++;
-          break;
-        case MID_CHASSIS_PARSE_TAIL_MISMATCH:
-          s_tailMismatchCount++;
-          break;
-        case MID_CHASSIS_PARSE_RANGE_ERROR:
-          s_rangeErrorCount++;
-          break;
-        default:
-          break;
-      }
+      APP_ChassisLink_HandleByte(s_parseBuffer[index]);
     }
 
     budget = (uint16_t)(budget - count);
     available = MID_UartRing_GetAvailable();
   }
+}
+#endif
+
+#if (CHASSIS_LINK_UPPER_SIM_ACTIVE == 1U)
+/**
+  * @brief  按定长协议把左右轮转速拼成一帧与上位机同格式的模拟报文。
+  * @param  pFrame    帧缓冲首地址，长度不小于 MID_CHASSIS_FRAME_LENGTH_BYTES，不可为 NULL。
+  * @param  leftRpm   左轮目标转速，单位转每分，符号表示方向。
+  * @param  rightRpm  右轮目标转速，单位转每分，符号表示方向。
+  * @retval None
+  * @note   布局与真实上位机一致：两字节帧头、两个小端 int32 转速、两字节帧尾；
+  *         偏移与帧头帧尾取值全部取自 mid_chassis_protocol.h 的协议常量，不另写数值，
+  *         协议若调整，本函数自动跟随，无需同步修改。
+  */
+static void APP_ChassisLink_PackSimFrame(uint8_t *pFrame, int32_t leftRpm, int32_t rightRpm)
+{
+  uint8_t byteIndex = 0U;
+
+  if (pFrame == NULL)
+  {
+    return;
+  }
+
+  pFrame[MID_CHASSIS_FRAME_OFFSET_HEADER] = MID_CHASSIS_FRAME_HEADER_0;
+  pFrame[MID_CHASSIS_FRAME_OFFSET_HEADER_1] = MID_CHASSIS_FRAME_HEADER_1;
+
+  /* 两个转速字段各占一个 int32，逐字节取小端表示，与上位机的 struct.pack('<i') 字节序一致。 */
+  for (byteIndex = 0U; byteIndex < (uint8_t)sizeof(int32_t); byteIndex++)
+  {
+    pFrame[MID_CHASSIS_FRAME_OFFSET_LEFT_SPEED + byteIndex] =
+      (uint8_t)(((uint32_t)leftRpm) >> (byteIndex * 8U));
+    pFrame[MID_CHASSIS_FRAME_OFFSET_RIGHT_SPEED + byteIndex] =
+      (uint8_t)(((uint32_t)rightRpm) >> (byteIndex * 8U));
+  }
+
+  pFrame[MID_CHASSIS_FRAME_OFFSET_TAIL] = MID_CHASSIS_FRAME_TAIL_0;
+  pFrame[MID_CHASSIS_FRAME_OFFSET_TAIL_1] = MID_CHASSIS_FRAME_TAIL_1;
+}
+
+/**
+  * @brief  把左右轮三角波各推进一个步进。
+  * @param  None
+  * @retval None
+  * @note   每轮方向相反的轮子各自独立翻转，轮子在速度到达上下限时换向并立即反向，
+  *         因此持续运行也不会停在端点上；步进量取自 CHASSIS_LINK_UPPER_SIM_RAMP_RPM，
+  *         配合发送周期决定斜坡快慢。三角波只决定目标转速，不参与任何限幅判定，
+  *         区间配置超出限幅时由解析器按真实链路的方式整帧拒绝。
+  */
+static void APP_ChassisLink_AdvanceSimWave(void)
+{
+  if (s_isSimLeftRising != false)
+  {
+    s_simLeftSpeed += (int32_t)CHASSIS_LINK_UPPER_SIM_RAMP_RPM;
+    if (s_simLeftSpeed >= (int32_t)CHASSIS_LINK_UPPER_SIM_LEFT_MAX_RPM)
+    {
+      s_simLeftSpeed = (int32_t)CHASSIS_LINK_UPPER_SIM_LEFT_MAX_RPM;
+      s_isSimLeftRising = false;
+    }
+  }
+  else
+  {
+    s_simLeftSpeed -= (int32_t)CHASSIS_LINK_UPPER_SIM_RAMP_RPM;
+    if (s_simLeftSpeed <= (int32_t)CHASSIS_LINK_UPPER_SIM_LEFT_MIN_RPM)
+    {
+      s_simLeftSpeed = (int32_t)CHASSIS_LINK_UPPER_SIM_LEFT_MIN_RPM;
+      s_isSimLeftRising = true;
+    }
+  }
+
+  if (s_isSimRightRising != false)
+  {
+    s_simRightSpeed += (int32_t)CHASSIS_LINK_UPPER_SIM_RAMP_RPM;
+    if (s_simRightSpeed >= (int32_t)CHASSIS_LINK_UPPER_SIM_RIGHT_MAX_RPM)
+    {
+      s_simRightSpeed = (int32_t)CHASSIS_LINK_UPPER_SIM_RIGHT_MAX_RPM;
+      s_isSimRightRising = false;
+    }
+  }
+  else
+  {
+    s_simRightSpeed -= (int32_t)CHASSIS_LINK_UPPER_SIM_RAMP_RPM;
+    if (s_simRightSpeed <= (int32_t)CHASSIS_LINK_UPPER_SIM_RIGHT_MIN_RPM)
+    {
+      s_simRightSpeed = (int32_t)CHASSIS_LINK_UPPER_SIM_RIGHT_MIN_RPM;
+      s_isSimRightRising = true;
+    }
+  }
+}
+
+/**
+  * @brief  按固定周期推进三角波并把合成报文注入环形缓冲区。
+  * @param  None
+  * @retval None
+  * @note   本函数只负责产生字节，写入位置与真实串口完全相同的环形缓冲区；
+  *         随后仍由 APP_ChassisLink_DrainAndParse 取数并解析，不直接调用解析器，
+  *         因此取数、解析、限幅、统计这条路径的覆盖范围与接真上位机一致。
+  *         注入时触发一次数据到达通知，等价于真实串口的一次空闲中断。
+  */
+static void APP_ChassisLink_InjectSimFrame(void)
+{
+  uint32_t currentTick = HAL_GetTick();
+
+  if ((uint32_t)(currentTick - s_simLastTick) < CHASSIS_LINK_UPPER_SIM_PERIOD_MS)
+  {
+    return;
+  }
+
+  s_simLastTick = currentTick;
+
+  APP_ChassisLink_AdvanceSimWave();
+  APP_ChassisLink_PackSimFrame(s_simFrame, s_simLeftSpeed, s_simRightSpeed);
+
+  (void)MID_UartRing_Inject(s_simFrame, MID_CHASSIS_FRAME_LENGTH_BYTES);
 }
 #endif
 
@@ -414,46 +536,34 @@ static void APP_ChassisLink_RunSelfTest(void)
 
 #if (CHASSIS_LINK_SELF_TEST_ENABLE == 0U)
 /**
-  * @brief  判定本次是否需要下发转速，需要则下发。
+  * @brief  按当前目标速度决定是否下发转速。
   * @param  None
   * @retval None
-  * @note   触发条件有三：首次判定上位机失联时把目标速度清零并立即下发一次实现超时停机；
-  *         目标速度相对已下发速度超出死区；距上次下发达到 CHASSIS_LINK_REFRESH_PERIOD_MS。
-  *         尚未收到过合法帧时直接返回，不向驱动器下发任何指令。
+  * @note   触发条件有两项：目标速度相对已下发速度超出死区；距上次下发达到 CHASSIS_LINK_REFRESH_PERIOD_MS。
+  *         没有收到过合法帧时把两轮目标强制归零，同样按刷新周期持续下发零速，
+  *         保证上位机不发数据时两轮立刻停住，不会停留在上一次的非零目标上；
+  *         驱动器未就绪时无法安全写入速度对象，直接返回。
   */
 static void APP_ChassisLink_Dispatch(void)
 {
   uint32_t currentTick = HAL_GetTick();
   bool needDispatch = false;
 
-  if ((s_hasValidFrame == false) || (s_isDriveReady == false))
+  if (s_isDriveReady == false)
   {
     return;
   }
 
-  if (APP_ChassisLink_IsCommunicationLost(currentTick) != false)
+  if (s_hasValidFrame == false)
   {
-    if (s_isCommunicationLost == false)
-    {
-      s_isCommunicationLost = true;
-      s_targetLeftSpeed = 0;
-      s_targetRightSpeed = 0;
-      s_commLostCount++;
-      needDispatch = true;
-    }
-  }
-  else
-  {
-    s_isCommunicationLost = false;
+    s_targetLeftSpeed = 0;
+    s_targetRightSpeed = 0;
   }
 
-  if ((needDispatch == false) && (s_isCommunicationLost == false))
+  if ((APP_ChassisLink_IsSpeedChanged(s_targetLeftSpeed, s_sentLeftSpeed) != false) ||
+      (APP_ChassisLink_IsSpeedChanged(s_targetRightSpeed, s_sentRightSpeed) != false))
   {
-    if ((APP_ChassisLink_IsSpeedChanged(s_targetLeftSpeed, s_sentLeftSpeed) != false) ||
-        (APP_ChassisLink_IsSpeedChanged(s_targetRightSpeed, s_sentRightSpeed) != false))
-    {
-      needDispatch = true;
-    }
+    needDispatch = true;
   }
 
   if ((needDispatch == false) && ((currentTick - s_lastDispatchTick) >= CHASSIS_LINK_REFRESH_PERIOD_MS))
@@ -545,8 +655,7 @@ MID_CANopenStatusTypeDef APP_ChassisLink_Init(void)
     return MID_CANOPEN_ERROR;
   }
 
-  s_lastValidFrameTick = HAL_GetTick();
-  s_lastDispatchTick = s_lastValidFrameTick;
+  s_lastDispatchTick = HAL_GetTick();
   s_isDriveReady = false;
 
 #if (CHASSIS_LINK_SELF_TEST_ENABLE == 0U)
@@ -554,11 +663,29 @@ MID_CANopenStatusTypeDef APP_ChassisLink_Init(void)
   APP_ChassisLink_ReadPulsesPerRev();
 #endif
 
+#if (CHASSIS_LINK_UPPER_SIM_ACTIVE == 1U)
+  /* 三角波从下限起步并先升速，首帧即可观察到加速过程。
+     注入模式替代 UART4 的 DMA 写入，环形缓冲区本身与真实接收共用同一个。 */
+  s_simLeftSpeed = (int32_t)CHASSIS_LINK_UPPER_SIM_LEFT_MIN_RPM;
+  s_simRightSpeed = (int32_t)CHASSIS_LINK_UPPER_SIM_RIGHT_MIN_RPM;
+  s_isSimLeftRising = true;
+  s_isSimRightRising = true;
+  s_simLastTick = HAL_GetTick();
+  APP_ChassisLink_PackSimFrame(s_simFrame, s_simLeftSpeed, s_simRightSpeed);
+#endif
+
   MID_UartRing_SetNotifyCallback(APP_ChassisLink_RxNotifyFromIsr);
+#if (CHASSIS_LINK_UPPER_SIM_ACTIVE == 1U)
+  if (MID_UartRing_StartInject() != HAL_OK)
+  {
+    return MID_CANOPEN_ERROR;
+  }
+#else
   if (MID_UartRing_Init() != HAL_OK)
   {
     return MID_CANOPEN_ERROR;
   }
+#endif
 
   return MID_CANOPEN_OK;
 }
@@ -584,8 +711,10 @@ void APP_ChassisLink_RxNotifyFromIsr(void)
   * @brief  底盘链路任务主体，循环完成接收与下发。
   * @param  argument  未使用。
   * @retval None
-  * @note   每轮等待接收信号量、解析串口帧、更新 CAN 状态并推进一次启动诊断阶段。
+  * @note   每轮等待接收信号量、取数并解析、更新 CAN 状态并推进一次启动诊断阶段。
   *         自检模式只执行带停止验证的点动；正常模式在两轮启动验证完成后下发速度。
+  *         开启上位机帧模拟时，字节来源由 UART4 的 DMA 换成任务内合成的三角波报文，
+  *         但取数仍走同一个环形缓冲区、解析仍走同一个解析器，后续流程完全一致。
   *         函数由 StartTaskHigh 调用，启动历史保存在 g_motorStartupDebug。
   */
 void APP_ChassisLink_Task(void *argument)
@@ -596,7 +725,10 @@ void APP_ChassisLink_Task(void *argument)
   {
     (void)osSemaphoreAcquire(s_hRxSemaphore, CHASSIS_LINK_POLL_TIMEOUT_MS);
 
-#if (CHASSIS_LINK_SELF_TEST_ENABLE == 0U)
+#if (CHASSIS_LINK_FRAME_PARSE_ACTIVE == 1U)
+#if (CHASSIS_LINK_UPPER_SIM_ACTIVE == 1U)
+    APP_ChassisLink_InjectSimFrame();
+#endif
     APP_ChassisLink_DrainAndParse();
 #endif
     MID_CANopen_Process();
@@ -632,7 +764,6 @@ void APP_ChassisLink_GetStatistics(APP_ChassisLinkStatisticsTypeDef *pStatistics
   pStatistics->dispatchCount = s_dispatchCount;
   pStatistics->dispatchFailureCount = s_dispatchFailureCount;
   pStatistics->lastSdoAbortCode = s_lastSdoAbortCode;
-  pStatistics->commLostCount = s_commLostCount;
   pStatistics->receiveLapCount = MID_UartRing_GetLapCount();
   pStatistics->receiveOverflowCount = MID_UartRing_GetOverflowCount();
   pStatistics->receiveByteCount = MID_UartRing_GetReadBytes();
@@ -641,5 +772,5 @@ void APP_ChassisLink_GetStatistics(APP_ChassisLinkStatisticsTypeDef *pStatistics
   pStatistics->sentLeftSpeed = s_sentLeftSpeed;
   pStatistics->sentRightSpeed = s_sentRightSpeed;
   pStatistics->isDriveReady = s_isDriveReady;
-  pStatistics->isCommunicationLost = s_isCommunicationLost;
+  pStatistics->hasValidFrame = s_hasValidFrame;
 }

@@ -27,9 +27,6 @@
 /* USER CODE BEGIN Includes */
 #include "app_chassis_link.h"
 #include "chassis_link_config.h"
-#if (CHASSIS_LINK_POWER_MONITOR_ENABLE == 1U)
-#include "app_power_monitor.h"
-#endif
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -49,15 +46,6 @@
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN Variables */
-#if (CHASSIS_LINK_POWER_MONITOR_ENABLE == 1U)
-/* 电源监视任务未登记在 .ioc 中，句柄与属性放在用户区，CubeMX 重新生成 freertos.c 时不会被覆盖。 */
-osThreadId_t PowerMonitorHandle;
-const osThreadAttr_t PowerMonitor_attributes = {
-  .name = "PowerMonitor",
-  .stack_size = 256 * 4,
-  .priority = (osPriority_t) osPriorityLow,
-};
-#endif
 /* USER CODE END Variables */
 /* Definitions for TaskLow */
 osThreadId_t TaskLowHandle;
@@ -83,9 +71,6 @@ const osThreadAttr_t TaskMid_attributes = {
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
-#if (CHASSIS_LINK_POWER_MONITOR_ENABLE == 1U)
-void APP_PowerMonitor_Task(void *argument);
-#endif
 /* USER CODE END FunctionPrototypes */
 
 void StartTaskLow(void *argument);
@@ -131,10 +116,6 @@ void MX_FREERTOS_Init(void) {
   TaskMidHandle = osThreadNew(StartTaskMid, NULL, &TaskMid_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
-#if (CHASSIS_LINK_POWER_MONITOR_ENABLE == 1U)
-  /* creation of PowerMonitor */
-  PowerMonitorHandle = osThreadNew(APP_PowerMonitor_Task, NULL, &PowerMonitor_attributes);
-#endif
   /* add threads, ... */
   /* USER CODE END RTOS_THREADS */
 

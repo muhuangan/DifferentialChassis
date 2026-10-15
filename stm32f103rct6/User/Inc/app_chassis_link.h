@@ -45,7 +45,6 @@ typedef struct
   uint32_t dispatchCount;          /**< 单轮转速下发成功累计数，一次双轮下发最多计两次。 */
   uint32_t dispatchFailureCount;   /**< 转速下发失败累计数。 */
   uint32_t lastSdoAbortCode;       /**< 最近一次下发失败对应节点的 SDO 中止码。 */
-  uint32_t commLostCount;          /**< 通信超时触发停机的累计次数。 */
   uint32_t receiveLapCount;        /**< DMA 写满整环的圈数，长时间不增长说明串口无数据。 */
   uint32_t receiveOverflowCount;   /**< 环形缓冲区溢出累计次数，属环满指示而非精确丢字节数。 */
   uint32_t receiveByteCount;       /**< 已从环形缓冲区取走的总字节数。 */
@@ -54,7 +53,7 @@ typedef struct
   int32_t  sentLeftSpeed;          /**< 最近一次下发的左轮速度，单位脉冲每秒。 */
   int32_t  sentRightSpeed;         /**< 最近一次下发的右轮速度，单位脉冲每秒。 */
   bool     isDriveReady;           /**< 两轮驱动器均已完成模式设置与使能。 */
-  bool     isCommunicationLost;    /**< 上位机通信超时标志。 */
+  bool     hasValidFrame;          /**< 已收到过至少一帧合法数据；为假时两轮目标速度被强制归零。 */
 } APP_ChassisLinkStatisticsTypeDef;
 
 MID_CANopenStatusTypeDef APP_ChassisLink_Init(void);

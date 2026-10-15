@@ -69,6 +69,28 @@ uint32_t MID_UartRing_GetOverflowCount(void);
 uint32_t MID_UartRing_GetLapCount(void);
 uint32_t MID_UartRing_GetReadBytes(void);
 
+#if (CHASSIS_LINK_UPPER_SIM_ACTIVE == 1U)
+/**
+  * @brief  把环形缓冲区切到注入模式，不再由 UART4 的 DMA 写入。
+  * @param  None
+  * @retval HAL_OK     切换成功。
+  * @note   写入下标改由软件维护，取数、解析与统计逻辑与 DMA 模式完全一致；
+  *         上层因此可以像对待真实串口数据一样，从同一个环形缓冲区取数解析。
+  *         本函数在调度器启动前调用，不会与 DMA 接收争用同一缓冲区。
+  */
+HAL_StatusTypeDef MID_UartRing_StartInject(void);
+
+/**
+  * @brief  向上层模拟一次串口数据到达，往环形缓冲区写入一段字节。
+  * @param  pData   待写入数据首字节的指针，不可为 NULL。
+  * @param  length  写入长度，单位字节。
+  * @retval 实际写入字节数；未处于注入模式、指针为空或长度为 0 时返回 0。
+  * @note   写入后像空闲中断一样触发一次数据到达通知，使等待信号量的任务被唤醒去取数，
+  *         因此取数时序与真实串口保持一致；超出缓冲区容量的数据按环形回绕覆盖最旧内容。
+  */
+uint16_t MID_UartRing_Inject(const uint8_t *pData, uint16_t length);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

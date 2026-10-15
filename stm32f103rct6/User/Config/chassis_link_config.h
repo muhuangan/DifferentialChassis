@@ -129,6 +129,39 @@ extern "C" {
   * @}
   */
 
+/** @defgroup CHASSIS_LINK_Upper_Sim 上位机帧模拟配置
+ * @{
+  */
+#ifndef CHASSIS_LINK_UPPER_SIM_ENABLE
+#define CHASSIS_LINK_UPPER_SIM_ENABLE 1U
+#endif
+/* 置 1 后 UART4 不再启动 DMA 接收，改由链路任务按固定周期合成一帧与上位机完全同格式的报文，
+   写入环形缓冲区后再经 APP_ChassisLink_DrainAndParse 正常取数解析，
+   因此除字节来源不同外，取数、解析、限幅、转速换算与 CAN 下发链路与接真上位机完全一致。
+   依赖取数与解析通路，因此与自检模式互斥；同时置位时以自检模式为准。 */
+#define CHASSIS_LINK_UPPER_SIM_ACTIVE        ((CHASSIS_LINK_UPPER_SIM_ENABLE == 1U) && (CHASSIS_LINK_SELF_TEST_ENABLE == 0U))
+/** 三角波下限时转速，单位转每分，符号表示方向，绝对值不得超过 CHASSIS_LINK_SPEED_LIMIT_RPM。 */
+#define CHASSIS_LINK_UPPER_SIM_LEFT_MIN_RPM   10
+/** 三角波上限时转速，单位转每分；左右取相同区间时两轮同步同向往复，便于肉眼判断整车方向。 */
+#define CHASSIS_LINK_UPPER_SIM_LEFT_MAX_RPM   40
+/** 右轮三角波下限转速，单位转每分。 */
+#define CHASSIS_LINK_UPPER_SIM_RIGHT_MIN_RPM  10
+/** 右轮三角波上限转速，单位转每分。 */
+#define CHASSIS_LINK_UPPER_SIM_RIGHT_MAX_RPM  40
+/** 三角波每个发送周期的步进量，单位转每分；从下限到上限所需周期数为 区间差 除以该值。 */
+#define CHASSIS_LINK_UPPER_SIM_RAMP_RPM        2
+/** 模拟报文的发送周期，单位毫秒；真实上位机为 20 毫秒一帧，此处放慢便于逐帧观察解析与下发结果。 */
+#define CHASSIS_LINK_UPPER_SIM_PERIOD_MS       200U
+/** @} */
+
+/** @defgroup CHASSIS_LINK_Frame_Parse 报文取数解析通路开关
+ * @{
+  */
+/* 取数与解析通路只在自检模式下不需要：自检自带点位来源，不需要报文。
+   真实上位机与上位机帧模拟两种模式共用同一套取数解析流程，故一并编译。 */
+#define CHASSIS_LINK_FRAME_PARSE_ACTIVE        (CHASSIS_LINK_SELF_TEST_ENABLE == 0U)
+/** @} */
+
 /**
   * @defgroup CHASSIS_LINK_Speed_Config 目标转速配置
   * @{
@@ -147,8 +180,11 @@ extern "C" {
   * @defgroup CHASSIS_LINK_Safety_Config 安全兜底配置
   * @{
   */
-#define CHASSIS_LINK_COMM_TIMEOUT_MS              100U  /**< 通信超时，单位毫秒，超过该时长未收到合法帧即判定上位机失联。 */
-#define CHASSIS_LINK_ENABLE_COMM_TIMEOUT_STOP     1U    /**< 失联自动停机开关，1 开启，0 关闭。 */
+/* 原通信超时停机机制（CHASSIS_LINK_COMM_TIMEOUT_MS / CHASSIS_LINK_ENABLE_COMM_TIMEOUT_STOP）
+   已按需求移除：不再按“距上一帧的时长”判定失联停机，改为只要没有收到过合法帧就把两轮目标速度
+   归零并按 CHASSIS_LINK_REFRESH_PERIOD_MS 持续下发零速。这样上位机一旦不发数据，两轮立即停住，
+   不会停留在上一次的非零目标上；同时避免帧间隔抖动（上位机 50 Hz，20 ms 一帧）被误判为失联。 */
+
 /**
   * @}
   */
@@ -158,26 +194,12 @@ extern "C" {
   * @{
   */
 #define CHASSIS_LINK_ENABLE_PROFILE_RAMP          1U      /**< 1 处理加减速度，位置测试读取现有正值，速度模式写入配置值；0 跳过。 */
-#define CHASSIS_LINK_PROFILE_ACCELERATION_PPS2    1000U  /**< 速度模式轮廓加速度，单位脉冲每平方秒，仅在开启写入时生效。 */
-#define CHASSIS_LINK_PROFILE_DECELERATION_PPS2    1000U  /**< 轮廓减速度，单位脉冲每平方秒，仅在开启写入时生效，取值待实测确认。 */
-/**
-  * @}
-  */
-
-/**
-  * @defgroup CHASSIS_LINK_Power_Config 电池电压与点阵屏配置
-  * @{
-  */
-#ifndef CHASSIS_LINK_POWER_MONITOR_ENABLE
-#define CHASSIS_LINK_POWER_MONITOR_ENABLE 1U
-#endif
-#define CHASSIS_LINK_BATTERY_ADC_INDEX            3U     /**< 电池通道在 ADC DMA 缓冲中的下标，对应规则组第四通道。 */
-#define CHASSIS_LINK_BATTERY_DIVIDER_PERMILLE     11070  /**< 电池分压比，单位千分之一，11.07 对应 0 至 36 伏输入映射到 0 至 3.3 伏。 */
-#define CHASSIS_LINK_BATTERY_CELL_COUNT           3U     /**< 电池串联串数，用于把总电压拆回单体电压查电量表。 */
-#define CHASSIS_LINK_BATTERY_FULL_MV              12600  /**< 满电电压，单位毫伏，3 串锂电按单体 4.2 伏计。 */
-#define CHASSIS_LINK_BATTERY_LOW_MV               10500  /**< 低压告警电压，单位毫伏，低于该值并持续消抖后置低压标志。 */
-#define CHASSIS_LINK_BATTERY_CRITICAL_MV          9900   /**< 临界截止电压，单位毫伏，低于该值并持续消抖后置临界标志。 */
-#define CHASSIS_LINK_POWER_MONITOR_PERIOD_MS      200U   /**< 电源监视任务周期，单位毫秒，同时决定采样与屏幕刷新速率。 */
+/* 每轮脉冲数 = 2001h(默认 4000 细分) × 减速比(10) = 40000 脉冲/轮圈；
+   上位机 kv=200、linear=0.3 映射为 60 rpm，换算 60 × 40000 / 60 = 40000 脉冲每秒。
+   原 1000 pps² 需 40 秒才能到速，肉看起来像“使能了但起不来”，自检只跑 2000 pps（2 秒到速）因此掩盖了该问题。
+   取 20000 pps² 时 40000 pps 约 2 秒到位；上位机 rpm_limit=100（66666 pps）约 3.3 秒到位。 */
+#define CHASSIS_LINK_PROFILE_ACCELERATION_PPS2    50000U /**< 速度模式轮廓加速度，单位脉冲每平方秒，仅在开启写入时生效。 */
+#define CHASSIS_LINK_PROFILE_DECELERATION_PPS2    50000U /**< 轮廓减速度，单位脉冲每平方秒，仅在开启写入时生效。 */
 /**
   * @}
   */

@@ -33,6 +33,11 @@ static volatile uint32_t s_overflowCount = 0U;                    /**< 环形缓
 static volatile uint32_t s_readBytes = 0U;                        /**< 已从环形缓冲区取走的总字节数。 */
 static MID_UartRingNotifyCallbackTypeDef s_notifyCallback = NULL; /**< 数据到达通知回调，由上层注册。 */
 
+#if (CHASSIS_LINK_UPPER_SIM_ACTIVE == 1U)
+static volatile bool     s_isInjectMode = false;   /**< 是否处于注入模式；为真时写入下标不再取自 DMA 计数器。 */
+static volatile uint16_t s_injectWritePos = 0U;    /**< 注入模式下的写入下标，环形下标。 */
+#endif
+
 static void MID_UartRing_Notify(void);
 
 /**
@@ -146,13 +151,25 @@ void MID_UartRing_DmaLapIrqHandler(DMA_HandleTypeDef *hdma)
   * @brief  计算环形缓冲区中尚未取走的字节数。
   * @param  None
   * @retval 可读字节数。
-  * @note   用 DMA 剩余计数器反推写入下标，与读取下标做差后按掩码回绕得到可读量；
-  *         该值可能比真实值少 1 至 2 个字节，属保守方向，余量由下一次通知补齐。
+  * @note   写入下标有两个来源：DMA 模式用剩余计数器反推，注入模式直接取软件维护的下标；
+  *         两者与读取下标做差后按掩码回绕得到可读量，取数逻辑因此完全一致。
+  *         DMA 模式下该值可能比真实值少 1 至 2 个字节，属保守方向，余量由下一次通知补齐。
   */
 uint16_t MID_UartRing_GetAvailable(void)
 {
-  uint16_t writePos = (uint16_t)((MID_UART_RING_SIZE_BYTES - __HAL_DMA_GET_COUNTER(&hdma_uart4_rx)) &
-                                 MID_UART_RING_SIZE_MASK);
+  uint16_t writePos = 0U;
+
+#if (CHASSIS_LINK_UPPER_SIM_ACTIVE == 1U)
+  if (s_isInjectMode != false)
+  {
+    writePos = s_injectWritePos;
+  }
+  else
+#endif
+  {
+    writePos = (uint16_t)((MID_UART_RING_SIZE_BYTES - __HAL_DMA_GET_COUNTER(&hdma_uart4_rx)) &
+                           MID_UART_RING_SIZE_MASK);
+  }
 
   return (uint16_t)((writePos - s_readPos) & MID_UART_RING_SIZE_MASK);
 }
@@ -218,6 +235,57 @@ uint32_t MID_UartRing_GetLapCount(void)
 {
   return s_lapCount;
 }
+
+#if (CHASSIS_LINK_UPPER_SIM_ACTIVE == 1U)
+/**
+  * @brief  把环形缓冲区切到注入模式，不再由 UART4 的 DMA 写入。
+  * @param  None
+  * @retval HAL_OK     切换成功。
+  * @note   写入下标改由软件维护，取数、解析与统计逻辑与 DMA 模式完全一致；
+  *         统计量与 DMA 模式一起清零，避免切换后残留上一次运行的计数。
+  *         调用前需确保 MID_UartRing_Init 尚未启动 DMA 接收，否则两种写入方会争用同一缓冲区。
+  */
+HAL_StatusTypeDef MID_UartRing_StartInject(void)
+{
+  s_readPos = 0U;
+  s_lapCount = 0U;
+  s_overflowCount = 0U;
+  s_readBytes = 0U;
+  s_injectWritePos = 0U;
+  s_isInjectMode = true;
+
+  return HAL_OK;
+}
+
+/**
+  * @brief  模拟一次串口数据到达，往环形缓冲区写入一段字节。
+  * @param  pData   待写入数据首字节的指针，不可为 NULL。
+  * @param  length  写入长度，单位字节。
+  * @retval 实际写入字节数；未处于注入模式、指针为空或长度为 0 时返回 0。
+  * @note   逐字节写入并按掩码推进下标，写满整环后回绕覆盖最旧内容；
+  *         写完后触发一次数据到达通知，语义与空闲中断一致，
+  *         使等待信号量的链路任务被唤醒并走与真实串口相同的取数路径。
+  */
+uint16_t MID_UartRing_Inject(const uint8_t *pData, uint16_t length)
+{
+  uint16_t index = 0U;
+
+  if ((s_isInjectMode == false) || (pData == NULL) || (length == 0U))
+  {
+    return 0U;
+  }
+
+  for (index = 0U; index < length; index++)
+  {
+    s_ringBuffer[s_injectWritePos] = pData[index];
+    s_injectWritePos = (uint16_t)((s_injectWritePos + 1U) & MID_UART_RING_SIZE_MASK);
+  }
+
+  MID_UartRing_Notify();
+
+  return length;
+}
+#endif
 
 /**
   * @brief  读取已从环形缓冲区取走的总字节数。

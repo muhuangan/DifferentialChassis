@@ -158,8 +158,8 @@ extern "C" {
   * @{
   */
 #define CHASSIS_LINK_ENABLE_PROFILE_RAMP          1U      /**< 1 处理加减速度，位置测试读取现有正值，速度模式写入配置值；0 跳过。 */
-#define CHASSIS_LINK_PROFILE_ACCELERATION_PPS2    1000U  /**< 速度模式轮廓加速度，单位脉冲每平方秒，仅在开启写入时生效。 */
-#define CHASSIS_LINK_PROFILE_DECELERATION_PPS2    1000U  /**< 轮廓减速度，单位脉冲每平方秒，仅在开启写入时生效，取值待实测确认。 */
+#define CHASSIS_LINK_PROFILE_ACCELERATION_PPS2    100000U  /**< 速度模式轮廓加速度，单位脉冲每平方秒，仅在开启写入时生效。 */
+#define CHASSIS_LINK_PROFILE_DECELERATION_PPS2    200000U  /**< 轮廓减速度，单位脉冲每平方秒，仅在开启写入时生效，取值待实测确认。 */
 /**
   * @}
   */

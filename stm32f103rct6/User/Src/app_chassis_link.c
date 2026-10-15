@@ -549,10 +549,7 @@ MID_CANopenStatusTypeDef APP_ChassisLink_Init(void)
   s_lastDispatchTick = s_lastValidFrameTick;
   s_isDriveReady = false;
 
-#if (CHASSIS_LINK_SELF_TEST_ENABLE == 0U)
-  /* 换算基准先落地：读不到 2001h 时内部回落到默认细分，之后每帧都按它把 rpm 换成脉冲每秒。 */
-  APP_ChassisLink_ReadPulsesPerRev();
-#endif
+
 
   MID_UartRing_SetNotifyCallback(APP_ChassisLink_RxNotifyFromIsr);
   if (MID_UartRing_Init() != HAL_OK)
@@ -591,6 +588,15 @@ void APP_ChassisLink_RxNotifyFromIsr(void)
 void APP_ChassisLink_Task(void *argument)
 {
   (void)argument;
+
+
+#if (CHASSIS_LINK_SELF_TEST_ENABLE == 0U)
+  /* 调度器启动后读取电机参数，此时接收与计时中断可以正常执行。 */
+  APP_ChassisLink_ReadPulsesPerRev();
+#endif
+
+
+
 
   for (;;)
   {
